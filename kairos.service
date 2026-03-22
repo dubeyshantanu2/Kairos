@@ -1,0 +1,33 @@
+[Unit]
+Description=Kairos — NIFTY Options Scalping Environment Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=kairos
+Group=kairos
+
+# Path to your project on the VPS
+WorkingDirectory=/home/kairos/kairos
+
+# Run the scheduler directly with the venv Python
+ExecStart=/home/kairos/kairos/.venv/bin/python -m kairos.scheduler
+
+# Restart on failure — critical for always-on monitoring
+Restart=always
+RestartSec=10
+
+# Environment file — keeps secrets out of this file
+EnvironmentFile=/home/kairos/kairos/.env
+
+# Logging — view with: journalctl -u kairos -f
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=kairos
+
+# Give it time to shut down gracefully
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
