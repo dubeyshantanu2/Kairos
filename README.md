@@ -1,147 +1,86 @@
-# Kairos — NIFTY Options Scalping Environment Monitor
+# Kairos: Scalping Environment Monitor
 
-A real-time environment monitor for intraday NIFTY options buying.
-Scores 7 market conditions every minute and posts 🟢 GO / 🟡 CAUTION / 🔴 AVOID
-alerts to Discord via OpenClaw.
+An intraday condition scoring engine designed specifically for **NIFTY Options Buying**. 
 
----
-
-## Project Structure
-
-```
-src/kairos/
-├── config.py       All settings and thresholds (single source of truth)
-├── models.py       Pydantic data models
-├── fetcher.py      Dhan API integration
-├── processor.py    7 condition scoring functions
-├── engine.py       Score aggregation, IV cap, DTE scaling
-├── db.py           Supabase client (4 tables only)
-├── notifier.py     Discord webhook poster
-└── scheduler.py    Main entry point — scoring loop + heartbeat
-```
+It does **not** generate trade signals. Instead, it acts as a live weather report, aggregating complex market data (Momentum, IV Flow, Gammas, VWAP) into a simple broadcast alert: **🟢 GO**, **🟡 CAUTION**, or **🔴 AVOID**.
 
 ---
 
-## Setup
+## 🏗 System Architecture
 
-### 1. Clone and install
+The trading environment is entirely orchestrated through Discord via the OpenClaw bot. The Python Engine (this repository) runs headlessly on a VPS and communicates exclusively through an asynchronous **Supabase Shared State Bridge**.
 
+```mermaid
+graph TD
+    %% Entities
+    User((Trader))
+    Discord[Discord App]
+    OpenClaw[OpenClaw Bot\nDiscord Orchestrator]
+    Supabase[(Supabase\nPostgreSQL)]
+    Kairos[Kairos Python Engine\nVPS Headless]
+    Dhan[Dhan API]
+    
+    %% Flows
+    User -->|/start-monitor| Discord
+    Discord --> OpenClaw
+    OpenClaw -->|Writes session_config| Supabase
+    
+    Kairos -->|Reads session_config| Supabase
+    Kairos -->|Polls live market data| Dhan
+    
+    Kairos -->|Calculates 7 Conditions\nWrites summary_raw| Supabase
+    OpenClaw -->|Transforms summary via Gemini| Supabase
+    
+    Kairos -->|State changed?\nBroadcast Alert Wehbook| Discord
+    Discord -->|#environment /\n#system-check| User
+```
+
+---
+
+## 📚 Advanced Documentation
+
+If you are expanding this repository or integrating the orchestrator, please review the core documentation files before modifying logic:
+
+- **[OpenClaw Context & Integration Guide](docs/integration.md):** Exact responsibilities and database map for the Discord Bot side.
+- **[Mathematical Scoring Architecture](docs/scoring_architecture.md):** The absolute source-of-truth for the 7 scoring condition parameters, lookback windows, and IV Cap logic.
+- **[Architecture Decision Records (ADRs)](directives/adr/INDEX.md):** The historical log of system design choices, including why Supabase was chosen over WebSockets.
+- **[Changelog](CHANGELOG.md):** Build milestones and test suite updates.
+
+---
+
+## 🛠 Developer Setup
+
+If you are running the Kairos engine locally for development or testing:
+
+### 1. Installation
+This repository uses `pyproject.toml` standards. Ensure you have Python 3.10+ installed.
 ```bash
-git clone https://github.com/your-repo/kairos.git
-cd kairos
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-### 2. Configure environment
+### 2. Environment Variables
+Copy the `.env.example` to `.env` and fill out your local secrets. 
+**Note:** `.env` is explicitly ignored by `git`. Never commit your Dhan tokens or Supabase keys.
 
+| Variable | Description |
+|---|---|
+| `DHAN_CLIENT_ID` | Your Dhan HQ Client ID. |
+| `DHAN_ACCESS_TOKEN` | Generated Dhan HQ Access Token. |
+| `SUPABASE_URL` | Your Supabase project URL (`https://xyz.supabase.co`). |
+| `SUPABASE_KEY` | Public `anon` API key for Supabase restricted via RLS. |
+| `DISCORD_WEBHOOK_URL` | Webhook URL for the `#environment` channel. |
+| `DISCORD_HEALTH_WEBHOOK_URL`| Webhook URL for the `#system-check` channel. |
+
+### 3. Running the Test Suite
+The codebase includes an exhaustive `pytest` suite ensuring all mathematical thresholds map to the correct 🟢/🟡/🔴 point system.
 ```bash
-cp .env.example .env
-# Edit .env with your actual credentials
+python -m pytest tests/ -v
 ```
 
-### 3. Set up Supabase
-
-Run `supabase_schema.sql` in your Supabase SQL Editor.
-This creates all 4 tables, indexes, and pg_cron cleanup jobs.
-
-### 4. Run locally (development)
-
+### 4. Running the Engine
 ```bash
 python -m kairos.scheduler
 ```
-
----
-
-## VPS Deployment
-
-### 1. Create system user
-
-```bash
-sudo useradd -m -s /bin/bash kairos
-sudo su - kairos
-```
-
-### 2. Clone and set up
-
-```bash
-git clone https://github.com/your-repo/kairos.git
-cd kairos
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-cp .env.example .env
-# Edit .env with production credentials
-```
-
-### 3. Install systemd service
-
-```bash
-sudo cp kairos.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable kairos
-sudo systemctl start kairos
-```
-
-### 4. Monitor
-
-```bash
-# Live logs
-journalctl -u kairos -f
-
-# Status
-sudo systemctl status kairos
-
-# Restart after code update
-cd /home/kairos/kairos && git pull
-sudo systemctl restart kairos
-```
-
----
-
-## Discord Commands (via OpenClaw)
-
-| Command | Action |
-|---------|--------|
-| `/start-monitor` | Select symbol + expiry, start monitoring |
-| `/stop-monitor` | Stop monitoring |
-
-### Channels
-
-| Channel | Purpose |
-|---------|---------|
-| `#environment` | GO / CAUTION / AVOID alerts (state change only) |
-| `#system-check` | Heartbeat, startup, errors, stale signal warnings |
-
----
-
-## Scoring
-
-| Condition | Weight | Max Points |
-|-----------|--------|-----------|
-| IV Change Rate | 2x | 2 |
-| Momentum + Trend | 1x | 1 |
-| OI Flow | 1x | 1 |
-| Gamma/Theta (DTE-scaled) | 1x | 1 |
-| PDH/PDL Breakout | 1x | 1 |
-| Move Ratio (30-min) | 1x | 1 |
-| VWAP Distance | 1x | 1 |
-| **Total** | | **8** |
-
-| Score | Status |
-|-------|--------|
-| 7–8 | 🟢 GO |
-| 4–6 | 🟡 CAUTION |
-| 0–3 | 🔴 AVOID |
-
-**IV Contraction Cap:** If IV is contracting (🔴), maximum output is capped
-at CAUTION regardless of other conditions.
-
----
-
-## Extending to SENSEX (Phase 2)
-
-1. Update `session_config` to support SENSEX symbol
-2. Change `fetcher.py` `security_id` mapping for SENSEX (BSE scrip code)
-3. All scoring logic works as-is — `strike_interval` auto-selects 100 for SENSEX
+*(Ensure a valid session is marked as `ACTIVE` inside your Supabase `session_config` table, otherwise the engine will gracefully idle.)*

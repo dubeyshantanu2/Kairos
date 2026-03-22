@@ -129,11 +129,33 @@ def evaluate(
     previous_status: Optional[str] = None,
 ) -> EnvironmentScore:
     """
-    Main scoring function. Runs all 7 conditions and returns an EnvironmentScore.
-    Called every cycle from scheduler.py.
-
-    All inputs come from in-memory buffers or the current cycle's fetched data.
-    No I/O is performed here.
+    Orchestrates the 7 technical scoring conditions into a unified EnvironmentScore.
+    
+    This function acts as the core mathematical engine for the Kairos system. It extracts the
+    ATM options, delegates processing to the individual scoring modules, sums the points (Max: 8),
+    and strictly applies the `iv_capped` logic before yielding a final status.
+    
+    All inputs are injected from purely in-memory buffers or single-cycle API fetches. 
+    Zero disk I/O or network calls occur within this function.
+    
+    :param option_chain: Full list of current OptionChainRow objects fetched from the broker.
+    :type option_chain: list[OptionChainRow]
+    :param candle_buffer: Rolling 30-minute buffer of OHLCVCandle data.
+    :type candle_buffer: collections.deque
+    :param iv_buffer: Rolling 15-minute buffer of Implied Volatility floats.
+    :type iv_buffer: collections.deque
+    :param prev_levels: PreviousDayLevels loaded cleanly at session startup.
+    :type prev_levels: PreviousDayLevels
+    :param spot_price: The live value of the underlying index.
+    :type spot_price: float
+    :param dte: Days To Expiry of the active configuration.
+    :type dte: int
+    :param session_config: The system configuration dictating target symbols and active flags.
+    :type session_config: SessionConfig
+    :param previous_status: The text status from the T-1 scoring cycle to measure state changes.
+    :type previous_status: Optional[str]
+    :return: The aggregated and capped EnvironmentScore ready for database serialization.
+    :rtype: EnvironmentScore
     """
     strike_interval = (
         settings.nifty_strike_interval

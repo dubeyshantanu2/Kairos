@@ -36,9 +36,16 @@ def _caution(name: str, max_points: int, reason: str = "Warming up") -> Conditio
 
 def score_iv_change(iv_buffer: deque) -> ConditionResult:
     """
-    Measures whether ATM IV is expanding or contracting vs 15 minutes ago.
-    Returns 2 pts (GREEN), 1 pt (YELLOW), or 0 pts + cap flag (RED).
-    Requires iv_buffer to have at least 15 readings.
+    Measures whether At-The-Money (ATM) Implied Volatility (IV) is expanding or contracting.
+    
+    This function compares the current IV against the IV from `iv_change_lookback` (default: 15)
+    periods ago to determine if option premiums are inflating or experiencing theta crush.
+    
+    :param iv_buffer: A rolling in-memory deque containing the recent history of IV floats.
+    :type iv_buffer: collections.deque
+    :return: A ConditionResult mapping the points (Max: 2) and the status. 
+             Returns RED (0 pts) if IV is contracting, which triggers the systemic IV Cap.
+    :rtype: ConditionResult
     """
     lookback = settings.iv_change_lookback
 
@@ -64,9 +71,15 @@ def score_iv_change(iv_buffer: deque) -> ConditionResult:
 
 def score_momentum(candle_buffer: deque) -> ConditionResult:
     """
-    Two-part check: price range + volume spike (Part A) and
-    directional consistency — trending vs choppy (Part B).
-    Requires at least 5 candles in buffer.
+    Evaluates underlying momentum using price range, volume spikes, and directional consistency.
+    
+    Extracts the last 5 candles to determine if the price is trending cleanly or violently chopping.
+    Checks volume against a 20-candle moving average to confirm institutional participation.
+    
+    :param candle_buffer: A rolling deque of the last 30 1-minute OHLCVCandle objects.
+    :type candle_buffer: collections.deque
+    :return: A ConditionResult object mapping status (GREEN requires Range > 0.3%, Volume Spike, and >=4/5 trend). Max points: 1.
+    :rtype: ConditionResult
     """
     window = settings.momentum_candle_window
     vol_lookback = settings.momentum_volume_lookback
@@ -130,11 +143,15 @@ def score_momentum(candle_buffer: deque) -> ConditionResult:
 
 def score_oi_flow(atm: ATMStrikes) -> ConditionResult:
     """
-    Checks whether smart money is taking a directional position at ATM.
-    Uses oi_change from the current option chain snapshot (vs previous snapshot).
-    CE building + PE unwinding = bullish = GREEN
-    PE building + CE unwinding = bearish = GREEN
-    Both building or both flat = confused/no conviction = RED
+    Checks whether smart money is establishing a directional bias at the ATM strike.
+    
+    Evaluates instantaneous Open Interest (OI) deltas compared to the previous cycle.
+    CE building + PE unwinding = strongly Bearish. PE building + CE unwinding = strongly Bullish.
+    
+    :param atm: A consolidated ATMStrikes object containing the ATM CE and PE rows.
+    :type atm: ATMStrikes
+    :return: Extracted conviction result. Returns GREEN for unified direction, RED for straddle writes. (Max: 1)
+    :rtype: ConditionResult
     """
     ce_change = atm.ce.oi_change
     pe_change = atm.pe.oi_change
@@ -165,9 +182,17 @@ def score_oi_flow(atm: ATMStrikes) -> ConditionResult:
 
 def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
     """
-    Checks whether gamma payoff justifies theta cost.
-    Thresholds scale with DTE — stricter closer to expiry because theta
-    accelerates exponentially as time runs out.
+    Computes whether the potential gamma payoff mathematically justifies the theta cost.
+    
+    Thresholds strictness scales dynamically with DTE (Days to Expiry). On the day of expiry (DTE=1),
+    the ratio requirement jumps significantly to offset extreme theta acceleration (0DTE crush).
+    
+    :param atm: Consolidated ATM option rows for Greeks extraction.
+    :type atm: ATMStrikes
+    :param dte: Days To Expiry representing the lifespan of the currently monitored contract.
+    :type dte: int
+    :return: DTE-scaled threshold evaluation (Max points: 1).
+    :rtype: ConditionResult
     """
     gamma = atm.ce.gamma
     theta = abs(atm.ce.theta)   # theta is negative by convention
@@ -210,8 +235,17 @@ def score_pdhl_breakout(
     prev_levels: PreviousDayLevels,
 ) -> ConditionResult:
     """
-    Checks whether the current spot has broken out of yesterday's range.
-    near_band = 0.1% of spot — qualifies as "near breakout" territory.
+    Calculates if the current spot price has escaped the previous day's value area.
+    
+    Examines if the asset is trending cleanly above the Previous Day High (PDH) or
+    below the Previous Day Low (PDL), representing verified momentum.
+    
+    :param spot_price: The underlying asset's current live trading value.
+    :type spot_price: float
+    :param prev_levels: The static PreviousDayLevels loaded identically once at session startup.
+    :type prev_levels: PreviousDayLevels
+    :return: GREEN if cleanly broken out. YELLOW if trapped in the 0.1% near-band. (Max points: 1)
+    :rtype: ConditionResult
     """
     pdh = prev_levels.prev_day_high
     pdl = prev_levels.prev_day_low
@@ -238,9 +272,17 @@ def score_move_ratio(
     candle_buffer: deque,
 ) -> ConditionResult:
     """
-    Compares what the market has delivered (realized move over 30 min)
-    against what is priced into the ATM straddle (implied move).
-    Uses 30-candle window — independent from Condition 2's 5-candle window.
+    Compares the asset's realized volatile move against the move priced-in by option sellers.
+    
+    Utilizes a 30-minute lookback of the `candle_buffer` to capture realized `High - Low` range,
+    and maps it proportionally against the percentage cost of the ATM Straddle.
+    
+    :param atm: Standard ATM options object mapping the absolute LTP premiums.
+    :type atm: ATMStrikes
+    :param candle_buffer: Full rolling deque of the last 30 minutes of price action.
+    :type candle_buffer: collections.deque
+    :return: GREEN if Ratio > 1.0 (sellers are underpricing the actual volatility). (Max points: 1)
+    :rtype: ConditionResult
     """
     lookback = settings.move_ratio_lookback_candles
 
@@ -282,8 +324,17 @@ def score_vwap_distance(
     candle_buffer: deque,
 ) -> ConditionResult:
     """
-    Checks whether price is near VWAP (move has room) or extended (exhaustion risk).
-    VWAP is calculated incrementally by the fetcher and stored in each OHLCVCandle.
+    Ensures the underlying index is not statistically over-extended from the session mean.
+    
+    VWAP is computed incrementally by the DHAN fetcher since 09:15 IST.
+    A distance percentage > 0.40% signifies mean-reversion risk, halting continuation entries.
+    
+    :param spot_price: The live value of the underlying index.
+    :type spot_price: float
+    :param candle_buffer: Latest candles used purely to lift the most recent incremental VWAP.
+    :type candle_buffer: collections.deque
+    :return: Evaluated extension risk mapping GREEN/YELLOW/RED. (Max points: 1)
+    :rtype: ConditionResult
     """
     if not candle_buffer:
         return _caution("vwap_distance", 1, "No candles yet")
