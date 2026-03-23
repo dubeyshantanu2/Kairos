@@ -53,7 +53,7 @@ Based on the current score and specifically the state of the Implied Volatility 
 ### Condition 5: Previous Day High/Low (PDHL) Breakout
 **Weight:** 1 Point | **Time Parameter:** Previous Day Daily Candles
 **Logic:** Momentum traders seek expansion beyond yesterday's value area to confirm trend participation.
-* **Data Source:** PDH/PDL fetched exactly once at 09:15 session start. Band = 0.10% threshold.
+* **Data Source:** PDH/PDL fetched via `/charts/historical`. The engine automatically detects the last fully completed trading day (ignoring today's partial candle if present in the response).
 * **🟢 Green (1 Pt):** Price cleanly broke above PDH or below PDL.
 * **🟡 Yellow (0.5 Pts):** Price is within 0.10% of either level (testing resistance/support).
 * **🔴 Red (0 Pts):** Trapped cleanly inside yesterday's range.

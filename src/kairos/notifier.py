@@ -50,13 +50,26 @@ class Notifier:
 
     async def _post(self, webhook_url: str, payload: dict) -> None:
         """Fire-and-forget webhook POST. Logs on failure, never raises."""
+        # Always print payload to terminal for local debugging
+        content = payload.get("content", "")
+        logger.info(
+            "\n"
+            + "━" * 50 + "\n"
+            + "📢 DISCORD MESSAGE\n"
+            + "━" * 50 + "\n"
+            + content + "\n"
+            + "━" * 50
+        )
         if not self._client:
             logger.error("Notifier not started")
             return
         try:
             response = await self._client.post(webhook_url, json=payload)
             if response.status_code not in (200, 204):
-                logger.error(f"Discord webhook returned {response.status_code}")
+                logger.error(
+                    f"Discord webhook returned {response.status_code}: "
+                    f"{response.text[:200]}"
+                )
         except Exception as e:
             logger.error(f"Failed to post to Discord: {e}")
 

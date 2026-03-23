@@ -5,7 +5,7 @@ All calls are async and use a shared httpx.AsyncClient.
 """
 
 import asyncio
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -133,6 +133,11 @@ class DhanFetcher:
                         raise DhanAuthError("Dhan API auth failed (401) — access token may be expired")
 
                 if response.status_code != 200:
+                    logger.error(
+                        f"[DHAN GET] {endpoint} → {response.status_code}\n"
+                        f"  params: {kwargs.get('params', {})}\n"
+                        f"  response body: {response.text[:500]}"
+                    )
                     raise DhanAPIError(
                         f"Dhan API returned {response.status_code} for {endpoint}"
                     )
@@ -177,6 +182,11 @@ class DhanFetcher:
                         raise DhanAuthError("Dhan API auth failed (401) — access token may be expired")
 
                 if response.status_code != 200:
+                    logger.error(
+                        f"[DHAN POST] {endpoint} → {response.status_code}\n"
+                        f"  payload: {payload}\n"
+                        f"  response body: {response.text[:500]}"
+                    )
                     raise DhanAPIError(
                         f"Dhan API returned {response.status_code} for {endpoint}"
                     )
@@ -211,49 +221,58 @@ class DhanFetcher:
         """
         Fetch the full option chain for a symbol+expiry.
         Returns all CE and PE strikes as OptionChainRow objects.
-        Dhan endpoint: POST /optionchain
+        Handles Dhan's `data.oc` nested structure.
+        Dhan endpoint: POST /optionchain/
+
         """
         payload = {
             "UnderlyingScrip": 13,          # NIFTY scrip code
-            "UnderlyingSegment": "IDX_I",
+            "UnderlyingSeg": "IDX_I",
             "Expiry": expiry.strftime("%Y-%m-%d"),
         }
 
         if symbol == "SENSEX":
             payload["UnderlyingScrip"] = 51   # SENSEX scrip code
-            payload["UnderlyingSegment"] = "IDX_I"
+        elif symbol.isdigit():
+            payload["UnderlyingScrip"] = int(symbol)
 
         data = await self._post("/optionchain", payload)
         now = datetime.now(IST)
         rows: list[OptionChainRow] = []
 
-        # Dhan returns data.data as list of strike objects
-        for item in data.get("data", []):
-            for opt_type in ("CE", "PE"):
-                side = item.get(opt_type, {})
+        # Dhan returns data.oc as dict keyed by strike price string
+        oc = data.get("data", {}).get("oc", {})
+        for strike_str, sides in oc.items():
+            try:
+                strike = int(float(strike_str))
+            except (ValueError, TypeError):
+                continue
+            for opt_type, key in (("CE", "ce"), ("PE", "pe")):
+                side = sides.get(key, {})
                 if not side:
                     continue
+                greeks = side.get("greeks", {})
                 try:
                     rows.append(OptionChainRow(
                         timestamp=now,
                         symbol=symbol,
                         expiry=expiry,
-                        strike=int(item.get("strike_price", 0)),
+                        strike=strike,
                         option_type=opt_type,
                         iv=float(side.get("implied_volatility", 0.0)),
-                        delta=float(side.get("delta", 0.0)),
-                        gamma=float(side.get("gamma", 0.0)),
-                        theta=float(side.get("theta", 0.0)),
-                        vega=float(side.get("vega", 0.0)),
+                        delta=float(greeks.get("delta", 0.0)),
+                        gamma=float(greeks.get("gamma", 0.0)),
+                        theta=float(greeks.get("theta", 0.0)),
+                        vega=float(greeks.get("vega", 0.0)),
                         oi=int(side.get("oi", 0)),
-                        oi_change=int(side.get("oi_change", 0)),
+                        oi_change=int(side.get("oi", 0) - side.get("previous_oi", 0)),
                         volume=int(side.get("volume", 0)),
-                        ltp=float(side.get("ltp", 0.0)),
-                        bid=float(side.get("bid", 0.0)),
-                        ask=float(side.get("ask", 0.0)),
+                        ltp=float(side.get("last_price", 0.0)),
+                        bid=float(side.get("top_bid_price", 0.0)),
+                        ask=float(side.get("top_ask_price", 0.0)),
                     ))
                 except Exception as e:
-                    logger.warning(f"Skipping malformed row for strike {item.get('strike_price')}: {e}")
+                    logger.warning(f"Skipping malformed row for strike {strike_str}: {e}")
                     continue
 
         logger.debug(f"Fetched {len(rows)} option chain rows for {symbol} {expiry}")
@@ -268,11 +287,15 @@ class DhanFetcher:
         """
         Fetch the latest 1-minute OHLCV candle for the underlying index.
         VWAP is calculated incrementally — caller passes cumulative values.
+        Handles Dhan's root-level array response (timestamp, open, etc.).
         Dhan endpoint: POST /charts/intraday
+
         """
-        security_id = "13"    # NIFTY
+        security_id = 13    # NIFTY (integer, not string)
         if symbol == "SENSEX":
-            security_id = "51"
+            security_id = 51
+        elif symbol.isdigit():
+            security_id = int(symbol)
 
         payload = {
             "securityId": security_id,
@@ -280,10 +303,14 @@ class DhanFetcher:
             "instrument": "INDEX",
             "interval": "1",
             "oi": "false",
+            "fromDate": date.today().strftime("%Y-%m-%d"),
+            "toDate": date.today().strftime("%Y-%m-%d"),
         }
 
+        logger.info(f"[INTRADAY] Requesting candle for securityId={security_id} date={date.today()}")
         data = await self._post("/charts/intraday", payload)
-        candles = data.get("data", {})
+        # Dhan returns OHLCV arrays at root level (not nested under 'data')
+        candles = data if "timestamp" in data else data.get("data", {})
 
         # Dhan returns arrays: timestamp, open, high, low, close, volume
         timestamps = candles.get("timestamp", [])
@@ -293,6 +320,7 @@ class DhanFetcher:
         closes = candles.get("close", [])
         volumes = candles.get("volume", [])
 
+        logger.info(f"[INTRADAY] Candle count: {len(timestamps)}")
         if not timestamps:
             raise DhanAPIError(f"No candle data returned for {symbol}")
 
@@ -326,13 +354,18 @@ class DhanFetcher:
         """
         Fetch previous trading day's high and low.
         Uses daily candle endpoint to get yesterday's data.
+        Automatically detects whether today's candle is present to pick the correct index (-2 or -1).
         Dhan endpoint: POST /charts/historical
+
         """
         security_id = "13"
         if symbol == "SENSEX":
             security_id = "51"
+        elif symbol.isdigit():
+            security_id = symbol
 
-        from_date = date.today().strftime("%Y-%m-%d")
+        # Look back 7 days to ensure we cover weekends and holidays
+        from_date = (date.today() - timedelta(days=7)).strftime("%Y-%m-%d")
         to_date = date.today().strftime("%Y-%m-%d")
 
         payload = {
@@ -346,21 +379,33 @@ class DhanFetcher:
         }
 
         data = await self._post("/charts/historical", payload)
-        candles = data.get("data", {})
+        # Dhan returns OHLCV arrays at root level (same as intraday endpoint)
+        candles = data if "high" in data else data.get("data", {})
 
         highs = candles.get("high", [])
         lows = candles.get("low", [])
+        timestamps = candles.get("timestamp", [])
 
-        if len(highs) < 2:
-            # Fallback: if only today is returned, try to use open as proxy
-            logger.warning("Could not get previous day candle — using today's open as fallback")
-            closes = candles.get("close", [])
-            pdh = float(highs[0]) if highs else 0.0
-            pdl = float(lows[0]) if lows else 0.0
+        if not highs:
+            logger.warning("No historical data returned — PDH/PDL unavailable")
+            pdh, pdl = 0.0, 0.0
         else:
-            # Second-to-last entry is previous day
-            pdh = float(highs[-2])
-            pdl = float(lows[-2])
+            # Check if today's candle is included in the response
+            # Timestamps are Unix epoch in IST; last entry might be today (partial) or yesterday (complete)
+            last_ts = datetime.fromtimestamp(float(timestamps[-1]), tz=IST).date() if timestamps else None
+            today_included = (last_ts == date.today())
+
+            if today_included and len(highs) >= 2:
+                # Today's partial candle is index -1 → use -2 for previous completed day
+                idx = -2
+            else:
+                # Today not in response → last entry is the most recent completed trading day
+                idx = -1
+
+            pdh = float(highs[idx])
+            pdl = float(lows[idx])
+
+        logger.info(f"[HISTORICAL] PDH={pdh} | PDL={pdl}")
 
         return PreviousDayLevels(
             symbol=symbol,
@@ -379,10 +424,13 @@ class DhanFetcher:
         security_id = "13"
         if symbol == "SENSEX":
             security_id = "51"
+        elif symbol.isdigit():
+            security_id = symbol
 
-        data = await self._get(
-            "/expirylist",
-            params={"UnderlyingScrip": security_id, "UnderlyingSegment": "IDX_I"},
+        # Dhan expirylist is a POST endpoint
+        data = await self._post(
+            "/optionchain/expirylist",
+            payload={"UnderlyingScrip": int(security_id), "UnderlyingSeg": "IDX_I"},
         )
 
         expiries: list[AvailableExpiry] = []
@@ -412,9 +460,9 @@ class DhanFetcher:
         Returns True if Dhan API is reachable and credentials are valid.
         """
         try:
-            await self._get("/expirylist", params={
-                "UnderlyingScrip": "13",
-                "UnderlyingSegment": "IDX_I",
+            await self._post("/optionchain/expirylist", payload={
+                "UnderlyingScrip": 13,
+                "UnderlyingSeg": "IDX_I",
             })
             return True
         except DhanAuthError:

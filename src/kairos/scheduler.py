@@ -12,8 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 from zoneinfo import ZoneInfo
 
-from apscheduler import AsyncScheduler
-from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from kairos.config import settings
@@ -98,6 +97,7 @@ state = SessionState()
 
 def is_active_session() -> bool:
     """Returns True if current IST time is within an active trading session."""
+
     now = datetime.now(IST)
     h, m = now.hour, now.minute
     current = (h, m)
@@ -306,13 +306,19 @@ async def run_cycle() -> None:
     state.candle_buffer.append(latest_candle)
 
     # Find ATM IV and append to iv_buffer
-    atm_strike = round(latest_candle.close / settings.nifty_strike_interval) * settings.nifty_strike_interval
+    interval = settings.nifty_strike_interval
+    if config.symbol == "SENSEX" or config.symbol.isdigit():
+        interval = settings.sensex_strike_interval
+
+    atm_strike = round(latest_candle.close / interval) * interval
     atm_ce = next(
         (r for r in option_chain if r.strike == atm_strike and r.option_type == "CE"),
         None,
     )
     if atm_ce:
         state.iv_buffer.append(atm_ce.iv)
+    else:
+        logger.warning(f"ATM CE not found in option chain at strike {atm_strike}")
 
     state.cycle_count += 1
 
@@ -446,32 +452,40 @@ async def main() -> None:
 
     # Start APScheduler with two independent interval jobs
     # IntervalTrigger fires on fixed intervals regardless of job duration — no drift
-    async with AsyncScheduler() as scheduler:
-        await scheduler.add_schedule(
-            run_cycle,
-            IntervalTrigger(seconds=settings.poll_interval_seconds),
-            id="scoring_job",
-        )
-        await scheduler.add_schedule(
-            run_heartbeat,
-            IntervalTrigger(seconds=settings.heartbeat_interval_seconds),
-            id="heartbeat_job",
-        )
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        run_cycle,
+        'interval',
+        seconds=settings.poll_interval_seconds,
+        id="scoring_job",
+        max_instances=1,
+    )
+    scheduler.add_job(
+        run_heartbeat,
+        'interval',
+        seconds=settings.heartbeat_interval_seconds,
+        id="heartbeat_job",
+        max_instances=1,
+    )
 
-        logger.info(
-            f"Scheduler running — "
-            f"scoring every {settings.poll_interval_seconds}s, "
-            f"heartbeat every {settings.heartbeat_interval_seconds}s"
-        )
+    logger.info(
+        f"Scheduler running — "
+        f"scoring every {settings.poll_interval_seconds}s, "
+        f"heartbeat every {settings.heartbeat_interval_seconds}s"
+    )
+    
+    scheduler.start()
 
-        # Run first cycle immediately on startup
-        await run_cycle()
+    # Run first cycle immediately on startup
+    await run_cycle()
 
-        # Keep running until interrupted
-        try:
-            await asyncio.Event().wait()
-        except (KeyboardInterrupt, SystemExit):
-            logger.info("Shutting down gracefully...")
+    # Keep running until interrupted
+    try:
+        await asyncio.Event().wait()
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Shutting down gracefully...")
+    finally:
+        scheduler.shutdown()
 
     # Cleanup
     await fetcher.stop()
