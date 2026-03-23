@@ -381,9 +381,11 @@ async def run_heartbeat() -> None:
     """
     Posts a heartbeat to #system-check every 5 minutes.
     Also checks if scoring cycle has gone silent (stale signal detection).
+    Heartbeats are suppressed when no active session exists.
     """
-    if not state.active_config:
-        return   # not started yet
+    config = await db.get_active_session()
+    if config is None or config.status == "STOPPED":
+        return  # no active session — suppress heartbeat
 
     now = datetime.now(IST)
 

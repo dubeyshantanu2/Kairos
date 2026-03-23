@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Scheduler Heartbeat:**
+  - Suppressed heartbeats when no active session exists (returns `None` or status `STOPPED` from db).
+  - Updated `run_heartbeat()` to call `db.get_active_session()` directly for live status.
 - **Scoring Engine Calibration:**
   - Recalibrated `score_gamma_theta` thresholds by 1000x to match Dhan API's per-point-squared index terms.
   - Implemented CE/PE Greek averaging for robustness and added a session-open guard for `gamma=0` cases.

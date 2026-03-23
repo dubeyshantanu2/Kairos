@@ -124,11 +124,43 @@ async def test_run_heartbeat(mock_dependencies, dummy_session):
     sched.state.active_config = dummy_session
     sched.state.in_session = True
     
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
     sched.notifier.post_heartbeat = AsyncMock()
     sched.notifier.post_stale_signal_warning = AsyncMock()
     
     await sched.run_heartbeat()
     sched.notifier.post_heartbeat.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_run_heartbeat_suppressed_when_stopped(mock_dependencies, dummy_session):
+    import kairos.scheduler as sched
+    from kairos.models import SessionConfig
+    import datetime
+
+    stopped_session = SessionConfig(
+        symbol="NIFTY",
+        expiry=datetime.date(2026, 3, 26),
+        expiry_type="WEEKLY",
+        status="STOPPED"
+    )
+
+    sched.db.get_active_session = AsyncMock(return_value=stopped_session)
+    sched.notifier.post_heartbeat = AsyncMock()
+
+    await sched.run_heartbeat()
+    sched.notifier.post_heartbeat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_heartbeat_suppressed_when_no_session(mock_dependencies):
+    import kairos.scheduler as sched
+
+    sched.db.get_active_session = AsyncMock(return_value=None)
+    sched.notifier.post_heartbeat = AsyncMock()
+
+    await sched.run_heartbeat()
+    sched.notifier.post_heartbeat.assert_not_called()
 
 def test_session_helpers():
     from kairos.scheduler import is_active_session, get_session_name
