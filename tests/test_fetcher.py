@@ -21,9 +21,13 @@ async def test_fetcher_uninitialized():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetcher_auth_error():
+async def test_fetcher_auth_error(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_totp_secret", None)
     respx.post(f"{settings.dhan_base_url}/optionchain").respond(status_code=401)
     fetcher = DhanFetcher()
+    
+    # We set access token so start() doesn't fail
+    monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     await fetcher.start()
     
     with pytest.raises(DhanAuthError):
@@ -33,7 +37,8 @@ async def test_fetcher_auth_error():
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetcher_success():
+async def test_fetcher_success(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     mock_payload = {
         "data": [
             {
@@ -102,4 +107,50 @@ async def test_fetcher_extra_endpoints():
     expiries = await fetcher.get_available_expiries("NIFTY")
     assert len(expiries) == 2
     
+    await fetcher.stop()
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetcher_totp_reauth(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_access_token", "expired_token")
+    monkeypatch.setattr(settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(settings, "dhan_client_pin", "123456")
+
+    route = respx.post(f"{settings.dhan_base_url}/optionchain")
+    route.side_effect = [
+        httpx.Response(401),
+        httpx.Response(200, json={"data": [{"strike_price": 22000}]})
+    ]
+    
+    auth_mock = respx.post(f"{settings.dhan_auth_url}/generateAccessToken").respond(
+        status_code=200, 
+        json={"accessToken": "new_totp_token"}
+    )
+    
+    fetcher = DhanFetcher()
+    await fetcher.start()
+    
+    chain = await fetcher.get_option_chain("NIFTY", date(2026, 3, 26))
+    
+    assert auth_mock.called
+    assert fetcher._client.headers["access-token"] == "new_totp_token"
+    await fetcher.stop()
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_fetcher_totp_start(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_access_token", None)
+    monkeypatch.setattr(settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
+    monkeypatch.setattr(settings, "dhan_client_pin", "123456")
+
+    auth_mock = respx.post(f"{settings.dhan_auth_url}/generateAccessToken").respond(
+        status_code=200, 
+        json={"accessToken": "brand_new_token"}
+    )
+    
+    fetcher = DhanFetcher()
+    await fetcher.start()
+    
+    assert auth_mock.called
+    assert fetcher._client.headers["access-token"] == "brand_new_token"
     await fetcher.stop()

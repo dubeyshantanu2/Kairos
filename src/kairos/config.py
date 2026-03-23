@@ -15,8 +15,11 @@ class Settings(BaseSettings):
 
     # ── Dhan API ────────────────────────────────────────────────────────
     dhan_client_id: str
-    dhan_access_token: str
+    dhan_access_token: str | None = None
+    dhan_client_pin: str | None = None
+    dhan_totp_secret: str | None = None
     dhan_base_url: str = "https://api.dhan.co/v2"
+    dhan_auth_url: str = "https://auth.dhan.co/app"
 
     # ── Supabase ─────────────────────────────────────────────────────────
     supabase_url: str
