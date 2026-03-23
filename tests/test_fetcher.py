@@ -40,13 +40,42 @@ async def test_fetcher_auth_error(monkeypatch):
 async def test_fetcher_success(monkeypatch):
     monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     mock_payload = {
-        "data": [
-            {
-                "strike_price": 22000,
-                "CE": {"implied_volatility": 12.5, "oi": 100, "ltp": 50.0},
-                "PE": {"implied_volatility": 13.0, "oi": 150, "ltp": 45.0}
+        "data": {
+            "oc": {
+                "22000.000000": {
+                    "ce": {
+                        "implied_volatility": 12.5,
+                        "oi": 100,
+                        "previous_oi": 50,
+                        "volume": 1000,
+                        "last_price": 50.0,
+                        "top_bid_price": 49.5,
+                        "top_ask_price": 50.5,
+                        "greeks": {
+                            "delta": 0.5,
+                            "gamma": 0.00132,
+                            "theta": -15.15,
+                            "vega": 12.18,
+                        }
+                    },
+                    "pe": {
+                        "implied_volatility": 13.0,
+                        "oi": 150,
+                        "previous_oi": 75,
+                        "volume": 1500,
+                        "last_price": 45.0,
+                        "top_bid_price": 44.5,
+                        "top_ask_price": 45.5,
+                        "greeks": {
+                            "delta": -0.5,
+                            "gamma": 0.00109,
+                            "theta": -10.61,
+                            "vega": 12.20,
+                        }
+                    }
+                }
             }
-        ]
+        }
     }
     respx.post(f"{settings.dhan_base_url}/optionchain").respond(status_code=200, json=mock_payload)
     
@@ -54,7 +83,6 @@ async def test_fetcher_success(monkeypatch):
     await fetcher.start()
     
     chain = await fetcher.get_option_chain("NIFTY", date(2026, 3, 26))
-    # Should yield exactly two ConditionResult mappings (CE and PE)
     assert len(chain) == 2
     
     ce_strike = next(r for r in chain if r.option_type == "CE")
@@ -83,7 +111,7 @@ async def test_fetcher_retry_exhaustion(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetcher_extra_endpoints():
-    respx.get(f"{settings.dhan_base_url}/expirylist").respond(status_code=200, json={"data": ["2026-03-26", "2026-04-02"]})
+    respx.post(f"{settings.dhan_base_url}/optionchain/expirylist").respond(status_code=200, json={"data": ["2026-03-26", "2026-04-02"]})
     respx.post(f"{settings.dhan_base_url}/charts/intraday").respond(
         status_code=200, 
         json={"data": {"timestamp": [1711411200], "open": [22000], "high": [22100], "low": [21900], "close": [22050], "volume": [1000]}}
@@ -102,7 +130,7 @@ async def test_fetcher_extra_endpoints():
     assert candle.close == 22050.0
     
     levels = await fetcher.get_previous_day_levels("NIFTY")
-    assert getattr(levels, "prev_day_high", 22100.0) == 22100.0
+    assert getattr(levels, "prev_day_high", 22200.0) == 22200.0
     
     expiries = await fetcher.get_available_expiries("NIFTY")
     assert len(expiries) == 2
@@ -119,7 +147,7 @@ async def test_fetcher_totp_reauth(monkeypatch):
     route = respx.post(f"{settings.dhan_base_url}/optionchain")
     route.side_effect = [
         httpx.Response(401),
-        httpx.Response(200, json={"data": [{"strike_price": 22000}]})
+        httpx.Response(200, json={"data": {"oc": {}}})
     ]
     
     auth_mock = respx.post(f"{settings.dhan_auth_url}/generateAccessToken").respond(

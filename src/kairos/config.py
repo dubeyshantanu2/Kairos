@@ -42,12 +42,12 @@ class Settings(BaseSettings):
 
     # ── Active session windows (IST, 24h) ────────────────────────────────
     session_1_start: tuple[int, int] = (9, 15)
-    session_1_end: tuple[int, int] = (11, 0)
+    session_1_end: tuple[int, int] = (11, 45)
     session_2_start: tuple[int, int] = (13, 0)
     session_2_end: tuple[int, int] = (15, 15)
 
     # ── In-memory buffer sizes ────────────────────────────────────────────
-    candle_buffer_size: int = 30   # max candles kept in RAM
+    candle_buffer_size: int = 15   # max candles kept in RAM
     iv_buffer_size: int = 20       # max IV readings kept in RAM
 
     # ── Retry config ─────────────────────────────────────────────────────
@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     momentum_range_green: float = 0.30           # % range for green
     momentum_range_yellow: float = 0.15          # % range for yellow
     momentum_volume_multiplier: float = 1.5      # volume spike threshold
-    momentum_volume_lookback: int = 20           # candles for avg volume
+    momentum_volume_lookback: int = 15           # candles for avg volume
     momentum_trend_count_green: int = 4          # out of 5 candles trending
     momentum_trend_count_yellow: int = 3
 
@@ -74,14 +74,14 @@ class Settings(BaseSettings):
 
     # ── Condition 4: Gamma/Theta — DTE-scaled ────────────────────────────
     # DTE >= 3 (lenient — early week, plenty of time)
-    gamma_theta_dte_high_green: float = 0.10
-    gamma_theta_dte_high_yellow: float = 0.05
+    gamma_theta_dte_high_green: float = 0.00008    # DTE≥3 lenient
+    gamma_theta_dte_high_yellow: float = 0.00004
     # DTE = 2 (standard)
-    gamma_theta_dte_mid_green: float = 0.15
-    gamma_theta_dte_mid_yellow: float = 0.08
+    gamma_theta_dte_mid_green: float = 0.00012     # DTE=2 standard
+    gamma_theta_dte_mid_yellow: float = 0.00006
     # DTE = 1 (strict — expiry day, theta ruthless)
-    gamma_theta_dte_low_green: float = 0.25
-    gamma_theta_dte_low_yellow: float = 0.15
+    gamma_theta_dte_low_green: float = 0.00020     # DTE=1 strict — expiry day
+    gamma_theta_dte_low_yellow: float = 0.00008
 
     # ── Condition 5: PDH/PDL Breakout ─────────────────────────────────────
     pdhl_near_band_pct: float = 0.10   # % within PDH/PDL = "near breakout"
@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     # ── Condition 6: Move Ratio (30-min realized vs implied) ─────────────
     move_ratio_green: float = 1.0
     move_ratio_yellow: float = 0.7
-    move_ratio_lookback_candles: int = 30   # must match candle_buffer_size
+    move_ratio_lookback_candles: int = 15   # must match candle_buffer_size
 
     # ── Condition 7: VWAP Distance ───────────────────────────────────────
     vwap_distance_green: float = 0.20    # % from VWAP

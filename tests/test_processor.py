@@ -80,16 +80,23 @@ def test_score_oi_flow_neutral(make_atm):
     assert res.points == 0
 
 def test_score_gamma_theta_dte3(make_atm):
-    atm = make_atm(22000, ce_gamma=0.2, ce_theta=-1.0) # ratio = 0.2
-    # dte=3, green_thresh=0.10
+    # Realistic Dhan-scale Greeks: ratio = 0.00132/15.15 = 0.000087 → GREEN at DTE≥3
+    atm = make_atm(22000, ce_gamma=0.00132, ce_theta=-15.1539)
     res = score_gamma_theta(atm, 3)
     assert res.status == "GREEN"
 
 def test_score_gamma_theta_dte1_strict(make_atm):
-    atm = make_atm(22000, ce_gamma=0.2, ce_theta=-1.0) # ratio = 0.2
-    # dte=1, green_thresh=0.25, yellow_thresh=0.15
+    # Same ratio 0.000087 — below DTE=1 green thresh 0.00020, above yellow 0.00010
+    atm = make_atm(22000, ce_gamma=0.00132, ce_theta=-15.1539)
     res = score_gamma_theta(atm, 1)
     assert res.status == "YELLOW"
+
+def test_score_gamma_theta_gamma_zero(make_atm):
+    # Session open cold-start: gamma=0 should return YELLOW not RED
+    atm = make_atm(22000, ce_gamma=0.0, ce_theta=-15.1539)
+    res = score_gamma_theta(atm, 3)
+    assert res.status == "YELLOW"
+    assert "Gamma = 0" in res.detail
 
 def test_score_pdhl_breakout_green(mock_now, mock_date):
     prev = PreviousDayLevels(symbol="NIFTY", trade_date=mock_date, prev_day_high=22000, prev_day_low=21800, fetched_at=mock_now)

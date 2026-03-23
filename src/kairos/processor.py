@@ -76,7 +76,7 @@ def score_momentum(candle_buffer: deque) -> ConditionResult:
     Extracts the last 5 candles to determine if the price is trending cleanly or violently chopping.
     Checks volume against a 20-candle moving average to confirm institutional participation.
     
-    :param candle_buffer: A rolling deque of the last 30 1-minute OHLCVCandle objects.
+    :param candle_buffer: A rolling deque of the last 15 1-minute OHLCVCandle objects.
     :type candle_buffer: collections.deque
     :return: A ConditionResult object mapping status (GREEN requires Range > 0.3%, Volume Spike, and >=4/5 trend). Max points: 1.
     :rtype: ConditionResult
@@ -181,26 +181,18 @@ def score_oi_flow(atm: ATMStrikes) -> ConditionResult:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
-    """
-    Computes whether the potential gamma payoff mathematically justifies the theta cost.
-    
-    Thresholds strictness scales dynamically with DTE (Days to Expiry). On the day of expiry (DTE=1),
-    the ratio requirement jumps significantly to offset extreme theta acceleration (0DTE crush).
-    
-    :param atm: Consolidated ATM option rows for Greeks extraction.
-    :type atm: ATMStrikes
-    :param dte: Days To Expiry representing the lifespan of the currently monitored contract.
-    :type dte: int
-    :return: DTE-scaled threshold evaluation (Max points: 1).
-    :rtype: ConditionResult
-    """
-    gamma = atm.ce.gamma
-    theta = abs(atm.ce.theta)   # theta is negative by convention
+    # Average CE and PE for robustness against one side having a bad reading
+    gamma = (atm.ce.gamma + atm.pe.gamma) / 2
+    theta = (abs(atm.ce.theta) + abs(atm.pe.theta)) / 2
 
     if theta == 0:
-        return _result("gamma_theta", "YELLOW", 0, 1, "Theta = 0, cannot compute ratio")
+        return _result("gamma_theta", "YELLOW", 0, 1, "Theta = 0, data not yet populated")
 
-    ratio = round(gamma / theta, 4)
+    # Guard against session-open cold start where Dhan returns gamma=0.0
+    if gamma == 0:
+        return _result("gamma_theta", "YELLOW", 0, 1, "Gamma = 0, data not yet populated")
+
+    ratio = round(gamma / theta, 6)  # 6 decimal places — values are in 0.0000xx range
 
     # Select thresholds based on DTE
     if dte >= 3:
@@ -216,7 +208,7 @@ def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
         yellow_thresh = settings.gamma_theta_dte_low_yellow
         scale_label = "DTE=1"
 
-    detail = f"Ratio {ratio:.3f} ({scale_label} scale)"
+    detail = f"Ratio {ratio:.6f} ({scale_label} scale)"
 
     if ratio > green_thresh:
         return _result("gamma_theta", "GREEN", 1, 1, f"{detail} — Gamma favored")
@@ -274,12 +266,12 @@ def score_move_ratio(
     """
     Compares the asset's realized volatile move against the move priced-in by option sellers.
     
-    Utilizes a 30-minute lookback of the `candle_buffer` to capture realized `High - Low` range,
+    Utilizes a 15-minute lookback of the `candle_buffer` to capture realized `High - Low` range,
     and maps it proportionally against the percentage cost of the ATM Straddle.
     
     :param atm: Standard ATM options object mapping the absolute LTP premiums.
     :type atm: ATMStrikes
-    :param candle_buffer: Full rolling deque of the last 30 minutes of price action.
+    :param candle_buffer: Full rolling deque of the last 15 minutes of price action.
     :type candle_buffer: collections.deque
     :return: GREEN if Ratio > 1.0 (sellers are underpricing the actual volatility). (Max points: 1)
     :rtype: ConditionResult
@@ -295,7 +287,7 @@ def score_move_ratio(
     spot = atm.spot_price
     implied_pct = (straddle / spot) * 100
 
-    # Realized move over 30 candles
+    # Realized move over 15 candles
     recent: list[OHLCVCandle] = list(candle_buffer)[-lookback:]
     realized_high = max(c.high for c in recent)
     realized_low = min(c.low for c in recent)

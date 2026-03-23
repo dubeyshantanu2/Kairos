@@ -42,13 +42,15 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🟡 Yellow (0.5 Pts):** Mild bias. Only one side showing significant change.
 * **🔴 Red (0 Pts):** Both adding heavily (straddle writing/rangebound) or both unwinding heavily (uncertainty).
 
-### Condition 4: DTE-Scaled Gamma/Theta Ratio
+### Condition 4: Averaged Gamma/Theta Ratio (DTE-Scaled)
 **Weight:** 1 Point | **Time Parameter:** Days To Expiry (DTE)
-**Logic:** Ensures that the potential acceleration in premium (Gamma) is mathematically worth the inherent time decay penalty (Theta). Scales stricter on expiry days.
-* **Data Source:** Live ATM CE Gamma and Theta. Ratio = `Gamma / abs(Theta)`.
-* **DTE >= 3 (Lenient):** 🟢 Ratio > 0.10 | 🟡 0.05–0.10 | 🔴 < 0.05
-* **DTE = 2 (Standard):** 🟢 Ratio > 0.15 | 🟡 0.08–0.15 | 🔴 < 0.08
-* **DTE = 1 (Expiry - Strict):** 🟢 Ratio > 0.25 | 🟡 0.15–0.25 | 🔴 < 0.15
+**Logic:** Ensures that the potential acceleration in premium (Gamma) justifies the time decay penalty (Theta). Scaled specifically for Dhan API's per-point-squared index terms.
+* **Data Source:** Averages both ATM CE and PE: `gamma = (CE+PE)/2` and `theta = (abs(CE)+abs(PE))/2`. Ratio = `gamma / theta`.
+* **Precision:** Calculated to 6 decimal places to maintain visibility of small-scale Dhan Greek ratios.
+* **Cold-Start Guard:** If `gamma == 0` (session open artifact), returns **YELLOW** status ("data not yet populated") instead of a false-negative RED.
+* **DTE >= 3 (Lenient):** 🟢 Ratio > 0.000080 | 🟡 > 0.000040 | 🔴 Below
+* **DTE = 2 (Standard):** 🟢 Ratio > 0.000120 | 🟡 > 0.000060 | 🔴 Below
+* **DTE = 1 (Expiry - Strict):** 🟢 Ratio > 0.000200 | 🟡 > 0.000080 | 🔴 Below
 
 ### Condition 5: Previous Day High/Low (PDHL) Breakout
 **Weight:** 1 Point | **Time Parameter:** Previous Day Daily Candles

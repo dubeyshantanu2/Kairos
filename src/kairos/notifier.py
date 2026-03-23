@@ -196,13 +196,23 @@ class Notifier:
         await self._post(settings.discord_health_webhook_url, {"content": content})
 
     async def post_api_warning(self, attempt: int, error_str: str) -> None:
-        """Post API failure warning after 3rd failed attempt."""
+        """Post API failure warning — only called on 'Start' of warning."""
         time_str = datetime.now(IST).strftime("%H:%M:%S IST")
         content = (
-            f"⚠️ **DHAN API WARNING**\n"
+            f"⚠️ **DHAN API WARNING (START)**\n"
             f"Failed to fetch data (attempt {attempt})\n"
             f"Error: {error_str}\n"
-            f"Retrying... | {time_str}"
+            f"Monitoring for recovery... | {time_str}"
+        )
+        await self._post(settings.discord_health_webhook_url, {"content": content})
+
+    async def post_api_recovered(self) -> None:
+        """Post API recovery — only called on 'End' of warning."""
+        time_str = datetime.now(IST).strftime("%H:%M:%S IST")
+        content = (
+            f"✅ **DHAN API RECOVERED (END)**\n"
+            f"Connectivity restored. Normal operations resumed.\n"
+            f"🕐 {time_str}"
         )
         await self._post(settings.discord_health_webhook_url, {"content": content})
 

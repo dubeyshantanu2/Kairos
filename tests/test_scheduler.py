@@ -4,6 +4,8 @@ from unittest.mock import MagicMock
 
 # --- Bypass APScheduler v4 Alpha imports ---
 sys.modules['apscheduler'] = MagicMock()
+sys.modules['apscheduler.schedulers'] = MagicMock()
+sys.modules['apscheduler.schedulers.asyncio'] = MagicMock()
 sys.modules['apscheduler.triggers.interval'] = MagicMock()
 
 from datetime import date, datetime

@@ -55,9 +55,13 @@ def make_option_row(mock_now, mock_date):
 
 @pytest.fixture
 def make_atm(make_option_row):
-    def _make(spot_price, ce_iv=0.15, ce_gamma=0.0, ce_theta=0.0, ce_oi_change=0, pe_oi_change=0, ce_ltp=100.0, pe_ltp=100.0):
+    def _make(spot_price, ce_iv=0.15, ce_gamma=0.0, ce_theta=0.0, ce_oi_change=0, pe_oi_change=0, ce_ltp=100.0, pe_ltp=100.0, pe_gamma=None, pe_theta=None):
         atm_strike = round(spot_price / 50) * 50
+        # Default PE greeks to match CE if not provided, for simplicity in existing tests
+        p_gamma = pe_gamma if pe_gamma is not None else ce_gamma
+        p_theta = pe_theta if pe_theta is not None else ce_theta
+        
         ce = make_option_row(atm_strike, "CE", iv=ce_iv, gamma=ce_gamma, theta=ce_theta, oi_change=ce_oi_change, ltp=ce_ltp)
-        pe = make_option_row(atm_strike, "PE", oi_change=pe_oi_change, ltp=pe_ltp)
+        pe = make_option_row(atm_strike, "PE", gamma=p_gamma, theta=p_theta, oi_change=pe_oi_change, ltp=pe_ltp)
         return ATMStrikes(atm_strike=atm_strike, ce=ce, pe=pe, spot_price=spot_price)
     return _make

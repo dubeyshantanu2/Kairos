@@ -51,6 +51,7 @@ class SessionState:
         self.last_fetch_time: Optional[datetime] = None
         self.last_successful_cycle_time: Optional[datetime] = None
         self.consecutive_failures: int = 0
+        self.api_warning_sent: bool = False
         self.stale_alert_sent: bool = False
 
         # Session boundary tracking
@@ -72,6 +73,7 @@ class SessionState:
         self.warmup_complete = False
         self.previous_status = None
         self.consecutive_failures = 0
+        self.api_warning_sent = False
         self.stale_alert_sent = False
         logger.info("SessionState: buffers reset for new session")
 
@@ -260,6 +262,10 @@ async def run_cycle() -> None:
         state.vwap_cumulative_num += typical_price * latest_candle.volume
 
         state.last_fetch_time = datetime.now(IST)
+        if state.api_warning_sent:
+            await notifier.post_api_recovered()
+            state.api_warning_sent = False
+
         state.consecutive_failures = 0
         state.dhan_ok = True
         state.stale_alert_sent = False
@@ -281,7 +287,8 @@ async def run_cycle() -> None:
         state.dhan_ok = False
         logger.warning(f"Dhan fetch failed (attempt {state.consecutive_failures}): {e}")
 
-        if state.consecutive_failures == 3:
+        if state.consecutive_failures >= 3 and not state.api_warning_sent:
+            state.api_warning_sent = True
             await notifier.post_api_warning(state.consecutive_failures, str(e))
 
         if state.consecutive_failures >= 5 and not state.stale_alert_sent:

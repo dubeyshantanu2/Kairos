@@ -140,7 +140,7 @@ def evaluate(
     
     :param option_chain: Full list of current OptionChainRow objects fetched from the broker.
     :type option_chain: list[OptionChainRow]
-    :param candle_buffer: Rolling 30-minute buffer of OHLCVCandle data.
+    :param candle_buffer: Rolling 15-minute buffer of OHLCVCandle data.
     :type candle_buffer: collections.deque
     :param iv_buffer: Rolling 15-minute buffer of Implied Volatility floats.
     :type iv_buffer: collections.deque
