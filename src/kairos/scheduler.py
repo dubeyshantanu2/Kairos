@@ -414,18 +414,14 @@ async def run_heartbeat() -> None:
             )
             return
 
-    # Diagnostic logging (heartbeat data) for local troubleshooting
     last_fetch = state.last_fetch_time
     fetch_time_str = last_fetch.strftime('%H:%M:%S') if last_fetch is not None else 'Never'
+
+    # Log a compact heartbeat summary
     logger.info(
-        f"💓 HEARTBEAT | Symbol: {config.symbol} | "
-        f"Cycle: {state.cycle_count} | "
-        f"Last Fetch: {fetch_time_str} | "
-        f"Warmup: {'Done' if state.warmup_complete else 'Pending'}"
+        f"💓 HEARTBEAT | {config.symbol} | Cycle {state.cycle_count} | "
+        f"Fetch: {fetch_time_str} | Warmup: {'Done' if state.warmup_complete else 'Pending'}"
     )
-
-
-
 
     # Discord heartbeat suppressed per ADR-006 to reduce noise.
     # It now only triggers when an issue is detected (handled via stale signal warning).
@@ -451,9 +447,9 @@ async def main() -> None:
     )
     logger.add(
         "logs/kairos.log",
-        rotation="1 day",
-        retention="7 days",
-        level="DEBUG",
+        rotation=settings.log_rotation,
+        retention=settings.log_retention,
+        level=settings.log_file_level,
         compression="zip",
     )
 

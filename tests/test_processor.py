@@ -80,15 +80,51 @@ def test_score_oi_flow_neutral(make_atm):
     assert res.points == 0
 
 def test_score_gamma_theta_dte3(make_atm):
-    # Realistic Dhan-scale Greeks: ratio = 0.00132/15.15 = 0.000087 → GREEN at DTE≥3
+    # Realistic Dhan-scale Greeks: 
+    # gamma = 0.00132, theta = -15.1539, spot = 22000
+    # theta_normalized = 15.1539 / 22000 = 0.0006888...
+    # ratio = 0.00132 / 0.0006888 = 1.916... → GREEN at DTE≥3 (thresh 0.00025)
     atm = make_atm(22000, ce_gamma=0.00132, ce_theta=-15.1539)
     res = score_gamma_theta(atm, 3)
     assert res.status == "GREEN"
 
-    # Ratio ~1.91 — well above DTE=1 green thresh 0.00020
-    atm = make_atm(22000, ce_gamma=0.00132, ce_theta=-15.1539)
+    # At DTE=1, thresh is 0.00020. 1.916 is still well above.
     res = score_gamma_theta(atm, 1)
     assert res.status == "GREEN"
+
+def test_score_gamma_theta_normalization_verification(make_atm):
+    """
+    Verifies that the normalization by spot price makes the ratio stable 
+    across different index levels (e.g. NIFTY at 22k vs 25k).
+    """
+    # Case 1: Spot = 20000, Gamma = 0.0005, Theta = 10.0
+    # theta_norm = 10 / 20000 = 0.0005. Ratio = 0.0005 / 0.0005 = 1.0
+    atm1 = make_atm(20000, ce_gamma=0.0005, ce_theta=-10.0)
+    res1 = score_gamma_theta(atm1, 3)
+    
+    # Case 2: Spot = 40000, Gamma = 0.00025, Theta = 10.0
+    # Theta is absolute rupee decay. In a 40k index, a 10 rupee decay is 
+    # half as significant as in a 20k index on a percentage basis.
+    # theta_norm = 10 / 40000 = 0.00025. Ratio = 0.00025 / 0.00025 = 1.0
+    # Since gamma is per-point-sq, it naturally scales inversely with price sq? 
+    # Actually, Dhan's gamma is absolute. 
+    # Let's just verify that for the same Greek values, the ratio changes 
+    # correctly based on spot.
+    
+    # If Greeks are IDENTICAL but spot is higher:
+    # Spot 20k -> Ratio 1.0
+    # Spot 40k -> theta_norm = 0.00025 -> Ratio = 0.0005 / 0.00025 = 2.0
+    # This proves that for the same absolute decay, a higher spot price 
+    # (more expensive index) gives more weight to Gamma.
+    atm2 = make_atm(40000, ce_gamma=0.0005, ce_theta=-10.0)
+    res2 = score_gamma_theta(atm2, 3)
+    
+    # Extract ratios from details string "Ratio 1.000000 (DTE≥3 scale)"
+    ratio1 = float(res1.detail.split()[1])
+    ratio2 = float(res2.detail.split()[1])
+    
+    assert ratio1 == 1.0
+    assert ratio2 == 2.0
 
 def test_score_gamma_theta_gamma_zero(make_atm):
     # Session open cold-start: gamma=0 should return YELLOW not RED

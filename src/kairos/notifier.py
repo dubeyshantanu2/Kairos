@@ -52,14 +52,8 @@ class Notifier:
         """Fire-and-forget webhook POST. Logs on failure, never raises."""
         # Always print payload to terminal for local debugging
         content = payload.get("content", "")
-        logger.info(
-            "\n"
-            + "━" * 50 + "\n"
-            + "📢 DISCORD MESSAGE\n"
-            + "━" * 50 + "\n"
-            + content + "\n"
-            + "━" * 50
-        )
+        content_snippet = content[:100].replace("\n", " ")
+        logger.info(f"📢 Discord Message -> Content: {content_snippet}...")
         if not self._client:
             logger.error("Notifier not started")
             return
@@ -297,10 +291,15 @@ class Notifier:
 def _get_session_label() -> str:
     now = datetime.now(IST)
     h, m = now.hour, now.minute
-    if (9, 15) <= (h, m) <= (11, 0):
-        return "Open (09:15–11:00)"
-    elif (13, 0) <= (h, m) <= (15, 15):
-        return "Post-Lunch (13:00–15:15)"
+    current = (h, m)
+    
+    s1_start, s1_end = settings.session_1_start, settings.session_1_end
+    s2_start, s2_end = settings.session_2_start, settings.session_2_end
+
+    if s1_start <= current <= s1_end:
+        return f"Open ({s1_start[0]:02d}:{s1_start[1]:02d}–{s1_end[0]:02d}:{s1_end[1]:02d})"
+    elif s2_start <= current <= s2_end:
+        return f"Post-Lunch ({s2_start[0]:02d}:{s2_start[1]:02d}–{s2_end[0]:02d}:{s2_end[1]:02d})"
     return "Outside session"
 
 

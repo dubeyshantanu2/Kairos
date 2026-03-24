@@ -35,6 +35,9 @@ class Settings(BaseSettings):
 
     # ── Logging ──────────────────────────────────────────────────────────
     log_level: str = "INFO"
+    log_file_level: str = "INFO"
+    log_rotation: str = "20 MB"
+    log_retention: str = "3 days"
 
     # ── Instrument constants ──────────────────────────────────────────────
     nifty_strike_interval: int = 50
