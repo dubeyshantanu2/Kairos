@@ -364,7 +364,17 @@ async def run_cycle() -> None:
             f"State change: {state.previous_status} → {score.status} "
             f"(score {score.score}/8)"
         )
-        await notifier.post_environment_alert(score)
+        
+        # Only alert for Signal Start (entering GO) or Signal End (leaving GO)
+        # This reduces noise while preserving actionable signals per ADR-007.
+        is_signal_start = (score.status == "GO")
+        is_signal_end = (state.previous_status == "GO")
+        
+        if is_signal_start or is_signal_end:
+            await notifier.post_environment_alert(score)
+        else:
+            logger.info(f"Discord: environment alert suppressed for {score.status} (noise reduction)")
+
 
     state.previous_status = score.status
     logger.debug(
@@ -400,24 +410,27 @@ async def run_heartbeat() -> None:
             state.stale_alert_sent = True
             await notifier.post_stale_signal_warning(
                 last_cycle_time=state.last_successful_cycle_time,
-                symbol=state.active_config.symbol,
+                symbol=config.symbol,
             )
             return
 
-    # Post heartbeat only during or near active sessions
-    expiry_str = (
-        state.active_config.expiry.strftime("%d %b %Y")
-        if state.active_config
-        else "—"
+    # Diagnostic logging (heartbeat data) for local troubleshooting
+    last_fetch = state.last_fetch_time
+    fetch_time_str = last_fetch.strftime('%H:%M:%S') if last_fetch is not None else 'Never'
+    logger.info(
+        f"💓 HEARTBEAT | Symbol: {config.symbol} | "
+        f"Cycle: {state.cycle_count} | "
+        f"Last Fetch: {fetch_time_str} | "
+        f"Warmup: {'Done' if state.warmup_complete else 'Pending'}"
     )
 
-    await notifier.post_heartbeat(
-        last_fetch_time=state.last_fetch_time,
-        cycle_count=state.cycle_count,
-        symbol=state.active_config.symbol,
-        expiry_str=expiry_str,
-        warmup_complete=state.warmup_complete,
-    )
+
+
+
+    # Discord heartbeat suppressed per ADR-006 to reduce noise.
+    # It now only triggers when an issue is detected (handled via stale signal warning).
+    # await notifier.post_heartbeat(...)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

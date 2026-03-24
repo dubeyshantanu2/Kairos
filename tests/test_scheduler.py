@@ -107,6 +107,7 @@ async def test_run_cycle(mock_dependencies, dummy_session, dummy_candle, dummy_l
     sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
     sched.db.write_environment_log = AsyncMock()
     sched.notifier.post_environment_alert = AsyncMock()
+
     sched.notifier.post_warmup_complete = AsyncMock()
     
     # Mock evaluate to avoid deep logic requirements here
@@ -129,7 +130,9 @@ async def test_run_heartbeat(mock_dependencies, dummy_session):
     sched.notifier.post_stale_signal_warning = AsyncMock()
     
     await sched.run_heartbeat()
-    sched.notifier.post_heartbeat.assert_called_once()
+    # Heartbeat is now suppressed per ADR-006 to reduce noise
+    sched.notifier.post_heartbeat.assert_not_called()
+
 
 
 @pytest.mark.asyncio
@@ -221,3 +224,93 @@ async def test_run_cycle_api_error(mock_dependencies, dummy_session, mocker):
     
     await sched.run_cycle()
     assert sched.state.consecutive_failures == 1
+
+@pytest.mark.asyncio
+async def test_run_cycle_suppressed_caution(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.previous_status = "AVOID"  # Start at AVOID
+    
+    # Change to CAUTION (should be suppressed)
+    caution_score = dummy_score.model_copy()
+    caution_score.status = "CAUTION"
+    caution_score.previous_status = "AVOID" # Triggers state_changed property
+
+    
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=caution_score)
+    
+    await sched.run_cycle()
+    
+    # Verify alert was NOT called for CAUTION
+    sched.notifier.post_environment_alert.assert_not_called()
+    assert sched.state.previous_status == "CAUTION"
+
+@pytest.mark.asyncio
+async def test_run_cycle_signal_start(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Entering GO (Signal Start) should trigger Discord alert."""
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.previous_status = "AVOID"  # Start at AVOID
+    
+    go_score = dummy_score.model_copy()
+    go_score.status = "GO"
+    go_score.previous_status = "AVOID"
+    
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=go_score)
+    
+    await sched.run_cycle()
+    
+    # SHOULD be called for GO
+    sched.notifier.post_environment_alert.assert_called_once()
+    assert sched.state.previous_status == "GO"
+
+@pytest.mark.asyncio
+async def test_run_cycle_signal_end(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Leaving GO (Signal End) should trigger Discord alert."""
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.previous_status = "GO"  # Start at GO
+    
+    avoid_score = dummy_score.model_copy()
+    avoid_score.status = "AVOID"
+    avoid_score.previous_status = "GO"
+    
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=avoid_score)
+    
+    await sched.run_cycle()
+    
+    # SHOULD be called when leaving GO
+    sched.notifier.post_environment_alert.assert_called_once()
+    assert sched.state.previous_status == "AVOID"
+
+
