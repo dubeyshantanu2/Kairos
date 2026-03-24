@@ -181,6 +181,30 @@ def score_oi_flow(atm: ATMStrikes) -> ConditionResult:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
+    """
+    Evaluates whether gamma-driven premium acceleration justifies the theta decay cost.
+
+    Dhan API returns theta as an absolute rupee-per-day decay (e.g. -29.3) and gamma
+    as a per-point-squared sensitivity (e.g. 0.00047). These are dimensionally
+    incompatible, so theta is normalized by the spot price before computing the ratio:
+
+        theta_normalized = abs(theta) / spot_price
+        ratio = gamma / theta_normalized
+
+    This converts theta to the same per-point scale as gamma, yielding a ratio that
+    is meaningful and stable across different index levels.
+
+    Thresholds are DTE-scaled: expiry-day conditions require a much higher gamma
+    advantage before scoring GREEN.
+
+    :param atm: Consolidated ATMStrikes object containing CE and PE rows and spot price.
+    :type atm: ATMStrikes
+    :param dte: Days To Expiry for the active contract.
+    :type dte: int
+    :return: GREEN (1 pt) if gamma advantage is sufficient; YELLOW if borderline; RED if theta dominant.
+             Returns YELLOW on cold-start zero-value guards instead of a false RED.
+    :rtype: ConditionResult
+    """
     # Average CE and PE for robustness against one side having a bad reading
     gamma = (atm.ce.gamma + atm.pe.gamma) / 2
     theta = (abs(atm.ce.theta) + abs(atm.pe.theta)) / 2
@@ -192,7 +216,12 @@ def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
     if gamma == 0:
         return _result("gamma_theta", "YELLOW", 0, 1, "Gamma = 0, data not yet populated")
 
-    ratio = round(gamma / theta, 6)  # 6 decimal places — values are in 0.0000xx range
+    # Normalize theta by spot price before computing the ratio.
+    # Dhan returns theta as an absolute ₹-per-day decay (e.g. -29.3), while gamma is
+    # expressed per point² (e.g. 0.00047). Dividing by spot_price converts theta to a
+    # % basis, making both quantities dimensionally compatible for a meaningful ratio.
+    theta_normalized = theta / atm.spot_price
+    ratio = round(gamma / theta_normalized, 6)  # 6 decimal places — values are in 0.0000xx range
 
     # Select thresholds based on DTE
     if dte >= 3:

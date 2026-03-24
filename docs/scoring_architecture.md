@@ -45,8 +45,9 @@ Based on the current score and specifically the state of the Implied Volatility 
 ### Condition 4: Averaged Gamma/Theta Ratio (DTE-Scaled)
 **Weight:** 1 Point | **Time Parameter:** Days To Expiry (DTE)
 **Logic:** Ensures that the potential acceleration in premium (Gamma) justifies the time decay penalty (Theta). Scaled specifically for Dhan API's per-point-squared index terms.
-* **Data Source:** Averages both ATM CE and PE: `gamma = (CE+PE)/2` and `theta = (abs(CE)+abs(PE))/2`. Ratio = `gamma / theta`.
-* **Precision:** Calculated to 6 decimal places to maintain visibility of small-scale Dhan Greek ratios.
+* **Data Source:** Averages both ATM CE and PE: `gamma = (CE+PE)/2` and `theta = (abs(CE)+abs(PE))/2`.
+* **Unit Normalization:** Dhan returns `theta` as an absolute ₹-per-day decay (e.g. `-29.3`), while `gamma` is expressed per point² (e.g. `0.00047`). These are on incompatible scales. Before computing the ratio, `theta` is normalized by the current spot price: `theta_normalized = theta / spot_price`. This converts theta to a per-point basis, matching gamma's scale.
+* **Ratio:** `gamma / theta_normalized` (rounded to 6 decimal places).
 * **Cold-Start Guard:** If `gamma == 0` (session open artifact), returns **YELLOW** status ("data not yet populated") instead of a false-negative RED.
 * **DTE >= 3 (Lenient):** 🟢 Ratio > 0.000080 | 🟡 > 0.000040 | 🔴 Below
 * **DTE = 2 (Standard):** 🟢 Ratio > 0.000120 | 🟡 > 0.000060 | 🔴 Below
