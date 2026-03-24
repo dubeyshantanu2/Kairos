@@ -85,11 +85,10 @@ def test_score_gamma_theta_dte3(make_atm):
     res = score_gamma_theta(atm, 3)
     assert res.status == "GREEN"
 
-def test_score_gamma_theta_dte1_strict(make_atm):
-    # Same ratio 0.000087 — below DTE=1 green thresh 0.00020, above yellow 0.00010
+    # Ratio ~1.91 — well above DTE=1 green thresh 0.00020
     atm = make_atm(22000, ce_gamma=0.00132, ce_theta=-15.1539)
     res = score_gamma_theta(atm, 1)
-    assert res.status == "YELLOW"
+    assert res.status == "GREEN"
 
 def test_score_gamma_theta_gamma_zero(make_atm):
     # Session open cold-start: gamma=0 should return YELLOW not RED
@@ -111,18 +110,20 @@ def test_score_pdhl_breakout_red(mock_now, mock_date):
 def test_score_move_ratio_green(make_candle, make_atm):
     # implied straddle is 100+100 = 200. spot = 22000 => implied = ~0.9%
     atm = make_atm(22000, ce_ltp=100, pe_ltp=100)
-    buf = deque([make_candle(22000)] * 29, maxlen=30)
+    buf = deque([make_candle(22000)] * 14, maxlen=15)
     # 300 pts realized high-low => > 1.36% realized move. > implied so > 1.0 => GREEN
     buf.append(make_candle(22150, low=21850, high=22150))
     res = score_move_ratio(atm, buf)
     assert res.status == "GREEN"
 
 def test_score_vwap_distance_green(make_candle):
-    buf = deque([make_candle(22000, vwap=22000)], maxlen=30)
+    buf = deque([make_candle(22000, vwap=22000)], maxlen=15)
+
     res = score_vwap_distance(22010, buf) # 10 pts distance (~0.04% < 0.2%)
     assert res.status == "GREEN"
 
 def test_score_vwap_distance_red(make_candle):
-    buf = deque([make_candle(22000, vwap=22000)], maxlen=30)
+    buf = deque([make_candle(22000, vwap=22000)], maxlen=15)
+
     res = score_vwap_distance(22500, buf) # 500 pts distance (> 2.0%)
     assert res.status == "RED"

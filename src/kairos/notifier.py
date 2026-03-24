@@ -150,7 +150,7 @@ class Notifier:
             "",
             "⏳ **WARMUP IN PROGRESS**",
             "Buffers empty — scoring in CAUTION mode",
-            "Full scoring available in ~30 minutes (cycle 30)",
+            "Full scoring available in ~15 minutes (cycle 15)",
             f"Monitoring : {symbol} | {expiry_str}",
         ])
         await self._post(settings.discord_health_webhook_url, {"content": content})

@@ -24,9 +24,10 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **Warmup:** Returns CAUTION (1 point) until 15 minutes of uninterrupted data have elapsed.
 
 ### Condition 2: Underlying Momentum & Consistency
-**Weight:** 1 Point | **Time Parameter:** 5-Minute Lookback + 20-Minute Volume Avg
+**Weight:** 1 Point | **Time Parameter:** 5-Minute Lookback + 15-Minute Volume Avg
 **Logic:** Ensures the underlying index is actually moving in a uniform direction rather than chopping erratically.
-* **Data Source:** Rolling 30-candle OHLCV In-Memory Buffer.
+
+* **Data Source:** Rolling 15-candle OHLCV In-Memory Buffer.
 * **Three Checks:**
   1. *Range:* `(Max High - Min Low) / Spot * 100` over the last 5 minutes.
   2. *Volume:* The latest candle volume must be > 1.5x the average volume of the last 20 candles.
@@ -62,16 +63,16 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🔴 Red (0 Pts):** Trapped cleanly inside yesterday's range.
 
 ### Condition 6: Realized Move vs Implied Straddle Ratio
-**Weight:** 1 Point | **Time Parameter:** 30-Minute Lookback
+**Weight:** 1 Point | **Time Parameter:** 15-Minute Lookback
 **Logic:** Asks the question: "Is the market actually delivering the volatility that option sellers are pricing in?" If yes, options are under-priced. If no, they are over-priced.
 * **Data Source:**
   1. *Implied Move:* Add the absolute premium points of ATM CE and PE `(Straddle Premium / Spot)`.
-  2. *Realized Move:* `(Max High - Min Low)` over the last 30 minutes.
+  2. *Realized Move:* `(Max High - Min Low)` over the last 15 minutes.
 * **Ratio:** `Realized Move % / Implied Move %`
 * **🟢 Green (1 Pt):** Ratio > 1.0 (Delivering greater volatile range than priced).
 * **🟡 Yellow (0.5 Pts):** Ratio 0.7 - 1.0 (Fair pricing).
 * **🔴 Red (0 Pts):** Ratio < 0.7 (Premium is entirely overvalued, theta sink).
-* **Warmup:** Returns CAUTION until 30 minutes of uninterrupted data have elapsed.
+* **Warmup:** Returns CAUTION until 15 minutes of uninterrupted data have elapsed.
 
 ### Condition 7: VWAP Distance Expansion
 **Weight:** 1 Point | **Time Parameter:** Current Session (Resets Daily)

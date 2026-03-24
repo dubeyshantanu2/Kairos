@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     # ── Condition 2: Momentum + Directional Consistency ───────────────────
     momentum_candle_window: int = 5              # candles for range + trend check
     momentum_range_green: float = 0.30           # % range for green
+
     momentum_range_yellow: float = 0.15          # % range for yellow
     momentum_volume_multiplier: float = 1.5      # volume spike threshold
     momentum_volume_lookback: int = 15           # candles for avg volume
@@ -86,7 +87,7 @@ class Settings(BaseSettings):
     # ── Condition 5: PDH/PDL Breakout ─────────────────────────────────────
     pdhl_near_band_pct: float = 0.10   # % within PDH/PDL = "near breakout"
 
-    # ── Condition 6: Move Ratio (30-min realized vs implied) ─────────────
+    # ── Condition 6: Move Ratio (15-min realized vs implied) ─────────────
     move_ratio_green: float = 1.0
     move_ratio_yellow: float = 0.7
     move_ratio_lookback_candles: int = 15   # must match candle_buffer_size

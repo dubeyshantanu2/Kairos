@@ -18,9 +18,10 @@ def test_evaluate_iv_cap(make_candle, make_option_row, mock_now, mock_date):
         make_option_row(22000, "CE", iv=0.10, gamma=0.3, theta=-0.5, oi_change=1000, ltp=150.0),
         make_option_row(22000, "PE", iv=0.10, gamma=0.3, theta=-0.5, oi_change=-500, ltp=150.0)
     ]
-    c_buf = deque(maxlen=30)
-    for _ in range(25):
+    c_buf = deque(maxlen=15)
+    for _ in range(10):
         c_buf.append(make_candle(22000.0, volume=100, vwap=22000.0, low=21700.0, high=22300.0))
+
     c_buf.append(make_candle(22005.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
     c_buf.append(make_candle(22010.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
     c_buf.append(make_candle(22015.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
@@ -42,9 +43,10 @@ def test_evaluate_go_no_cap(make_candle, make_option_row, mock_now, mock_date):
         make_option_row(22000, "CE", iv=0.10, gamma=0.3, theta=-0.5, oi_change=1000, ltp=150.0),
         make_option_row(22000, "PE", iv=0.10, gamma=0.3, theta=-0.5, oi_change=-500, ltp=150.0)
     ]
-    c_buf = deque(maxlen=30)
-    for _ in range(25):
+    c_buf = deque(maxlen=15)
+    for _ in range(10):
         c_buf.append(make_candle(22000.0, volume=100, vwap=22000.0, low=21700.0, high=22300.0))
+
     c_buf.append(make_candle(22005.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
     c_buf.append(make_candle(22010.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
     c_buf.append(make_candle(22015.0, volume=1000, vwap=22000.0, low=21700.0, high=22300.0))
