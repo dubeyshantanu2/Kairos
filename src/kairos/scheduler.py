@@ -237,9 +237,7 @@ async def run_cycle() -> None:
 
     if not state.in_session:
         state.in_session = True
-        # Reset VWAP accumulators at session start
-        state.vwap_cumulative_volume = 0
-        state.vwap_cumulative_num = 0.0
+        state.reset_buffers()
         await notifier.post_session_boundary(
             entering=True,
             session_name=get_session_name(),

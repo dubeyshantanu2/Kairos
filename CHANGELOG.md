@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Initial Session Alert & Boundary Reset (`scheduler.py`):**
+  - Root cause: The "proof of life" alert (introduced in ADR-008) only triggered if `previous_status` was `None`. However, the system failed to reset this status when crossing the lunch break boundary, causing the 1:00 PM session to start without an alert if the market status was unchanged from the morning.
+  - Fix: Implemented `state.reset_buffers()` call within the session entry gate. This ensures `previous_status` is cleared, triggering the initial alert, and also flushes stale buffers between the morning and afternoon sessions.
+  - Added regression test `test_run_cycle_session_transition_resets_state` to `tests/test_scheduler.py`.
 - **Gamma/Theta Ratio — Theta Normalization (`processor.py`):**
   - Root cause: Dhan returns `theta` as an absolute ₹-per-day decay value (e.g. `-29.3`) while `gamma` is expressed per point² (e.g. `0.00047`). These are dimensionally incompatible, causing the raw `gamma / abs(theta)` ratio to always be near zero and score permanently RED.
   - Fix: `theta` is now normalized by the spot price (`theta_normalized = abs(theta) / spot_price`) before the ratio is computed. This converts theta to `₹-decay / point` (matching gamma's per-point² scale), yielding a meaningful ratio in the correct order of magnitude.

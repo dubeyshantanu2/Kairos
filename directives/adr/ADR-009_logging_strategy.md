@@ -1,4 +1,4 @@
-# ADR-008: Refined Logging & Rotation Strategy
+# ADR-009: Refined Logging & Rotation Strategy
 
 **Date:** 2026-03-25
 **Status:** proposed

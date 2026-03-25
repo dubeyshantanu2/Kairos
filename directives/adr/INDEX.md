@@ -9,6 +9,8 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-003 | Dynamic TOTP Authentication | 2026-03-23 | Active |
 | ADR-004 | Gamma/Theta Calibration & Scaling | 2026-03-23 | Active |
 | ADR-006 | Issue-Only Health Reporting | 2026-03-24 | Active |
-| ADR-007 | Refined Alert Strategy (Start/End/Issue) | 2026-03-24 | Proposed |
+| ADR-007 | Refined Alert Strategy (Start/End/Issue) | 2026-03-24 | Active |
+| ADR-008 | Initial Session Alert & Boundary Reset | 2026-03-25 | Active |
+| ADR-009 | Refined Logging & Rotation Strategy | 2026-03-25 | Proposed |
 
 

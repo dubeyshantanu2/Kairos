@@ -7,17 +7,22 @@
 The current Discord notification strategy (ADR-007) is highly effective at reducing noise by only alerting on "Signal Start" (GO) or "Signal End" (leaving GO). However, this results in a lack of immediate feedback when the system starts or resets if the initial status is CAUTION or AVOID. The user needs confirmation that the system is scoring correctly at the beginning of each session.
 
 ## Decision and Rationale
-We will modify the alert filtering logic in `scheduler.py` to allow the first successful scoring cycle of any session/reset to trigger an alert, regardless of the status.
+We will modify the session gate logic in `scheduler.py` to call `state.reset_buffers()` every time a new session starts (e.g., at 9:15 AM and 1:00 PM).
 
 **Rationale:**
-- Provides "proof of life" for the scoring engine early in the session.
-- Only adds 1 additional message per session (morning, afternoon, or on config reset).
-- Maintains the "no-spam" policy for all subsequent cycles.
+- **Proof of Life:** Clearing `previous_status` ensures the cumulative scoring cycle identifies the first cycle of a new session window as `is_first_cycle`, triggering a mandatory Discord update regardless of market status.
+- **Data Integrity:** Resetting buffers at the session boundary (e.g., after lunch) prevents stale data from the morning session from contaminating momentum and VWAP calculations.
+- **Observability:** Maintains a strict "one message per session" confirmation while preserving the noise-reduction policy for all subsequent intraday updates.
 
 ## Implementation Details
-1.  In `src/kairos/scheduler.py`, inside `run_cycle()`, detect if this is the first successful scoring cycle.
-2.  A new Boolean flag `is_first_cycle = (state.previous_status is None)` can be used before `state.previous_status` is updated.
-3.  Update the `if` condition for `notifier.post_environment_alert(score)` to include `is_first_cycle`.
+1.  In `src/kairos/scheduler.py`, inside the session boundary check of `run_cycle()`:
+    ```python
+    if not state.in_session:
+        state.in_session = True
+        state.reset_buffers()  # Ensure fresh start + triggers alert
+        await notifier.post_session_boundary(...)
+    ```
+2.  The alert filtering logic uses `is_first_cycle = (state.previous_status is None)` to permit the initial signal.
 
 ## API Contracts / File Assignments
 - **`src/kairos/scheduler.py`**: Modify the alert evaluation block in `run_cycle`.

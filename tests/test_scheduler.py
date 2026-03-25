@@ -345,3 +345,40 @@ async def test_run_cycle_first_alert_and_subsequent_suppression(mock_dependencie
     sched.notifier.post_environment_alert.assert_not_called()
 
 
+@pytest.mark.asyncio
+async def test_run_cycle_session_transition_resets_state(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify that state is reset when entering a new session window."""
+    import kairos.scheduler as sched
+    from unittest.mock import AsyncMock
+    
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = False  # Start OUTSIDE session
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.previous_status = "AVOID"  # Remnant from morning session
+    
+    # Mock dependencies for run_cycle
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    sched.notifier.post_session_boundary = AsyncMock()
+    
+    def evaluate_side_effect(**kwargs):
+        res = dummy_score.model_copy()
+        res.status = "AVOID"
+        res.previous_status = kwargs.get("previous_status")
+        return res
+
+    mocker.patch("kairos.scheduler.evaluate", side_effect=evaluate_side_effect)
+    
+    await sched.run_cycle()
+    
+    # After fix, this should be True because reset_buffers sets previous_status=None,
+    # causing is_first_cycle to be True.
+    # Currently (before fix), it will be False because previous_status is still "AVOID".
+    sched.notifier.post_environment_alert.assert_called_once()
+
+
