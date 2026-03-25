@@ -172,7 +172,7 @@ def evaluate(
     c3_oi = score_oi_flow(atm)
     c4_gt = score_gamma_theta(atm, dte)
     c5_pdhl = score_pdhl_breakout(spot_price, prev_levels)
-    c6_move = score_move_ratio(atm, candle_buffer)
+    c6_move = score_move_ratio(atm, candle_buffer, dte)
     c7_vwap = score_vwap_distance(spot_price, candle_buffer)
 
     conditions = [c1_iv, c2_mom, c3_oi, c4_gt, c5_pdhl, c6_move, c7_vwap]

@@ -5,6 +5,7 @@ All data comes from in-memory buffers or the current cycle's fetched objects.
 """
 
 from collections import deque
+import math
 from typing import Optional
 
 from kairos.config import settings
@@ -291,6 +292,7 @@ def score_pdhl_breakout(
 def score_move_ratio(
     atm: ATMStrikes,
     candle_buffer: deque,
+    dte: int = 0,
 ) -> ConditionResult:
     """
     Compares the asset's realized volatile move against the move priced-in by option sellers.
@@ -302,6 +304,8 @@ def score_move_ratio(
     :type atm: ATMStrikes
     :param candle_buffer: Full rolling deque of the last 15 minutes of price action.
     :type candle_buffer: collections.deque
+    :param dte: Days To Expiry of the active configuration. Defaults to 0 for safety.
+    :type dte: int
     :return: GREEN if Ratio > 1.0 (sellers are underpricing the actual volatility). (Max points: 1)
     :rtype: ConditionResult
     """
@@ -311,10 +315,16 @@ def score_move_ratio(
         remaining = lookback - len(candle_buffer)
         return _caution("move_ratio", 1, f"Warming up — {remaining} candles needed")
 
-    # Implied move from straddle price
+    # Implied move from straddle price, scaled by sqrt(time)
+    # A 15-minute range must be compared against a 15-minute implied window.
     straddle = atm.ce.ltp + atm.pe.ltp
     spot = atm.spot_price
-    implied_pct = (straddle / spot) * 100
+    
+    trading_mins_per_day = 375  # 09:15–15:30 IST
+    total_remaining_mins = max(dte, 1) * trading_mins_per_day
+    
+    # Square-root-of-time scaling (ADR-004 principle)
+    implied_pct = (straddle / spot) * 100 * math.sqrt(15 / total_remaining_mins)
 
     # Realized move over 15 candles
     recent: list[OHLCVCandle] = list(candle_buffer)[-lookback:]

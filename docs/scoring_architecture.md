@@ -66,9 +66,9 @@ Based on the current score and specifically the state of the Implied Volatility 
 **Weight:** 1 Point | **Time Parameter:** 15-Minute Lookback
 **Logic:** Asks the question: "Is the market actually delivering the volatility that option sellers are pricing in?" If yes, options are under-priced. If no, they are over-priced.
 * **Data Source:**
-  1. *Implied Move:* Add the absolute premium points of ATM CE and PE `(Straddle Premium / Spot)`.
+  1. *Implied Move:* Add the absolute premium points of ATM CE and PE `(Straddle Premium / Spot)`. To match the realized window, this is scaled down to a 15-minute equivalent using the square-root-of-time rule: `implied_pct * sqrt(15 / total_remaining_mins)`.
   2. *Realized Move:* `(Max High - Min Low)` over the last 15 minutes.
-* **Ratio:** `Realized Move % / Implied Move %`
+* **Ratio:** `Realized Move % / Scaled Implied Move %`
 * **🟢 Green (1 Pt):** Ratio > 1.0 (Delivering greater volatile range than priced).
 * **🟡 Yellow (0.5 Pts):** Ratio 0.7 - 1.0 (Fair pricing).
 * **🔴 Red (0 Pts):** Ratio < 0.7 (Premium is entirely overvalued, theta sink).

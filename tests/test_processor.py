@@ -144,12 +144,15 @@ def test_score_pdhl_breakout_red(mock_now, mock_date):
     assert res.status == "RED"
 
 def test_score_move_ratio_green(make_candle, make_atm):
-    # implied straddle is 100+100 = 200. spot = 22000 => implied = ~0.9%
+    # DTE=6: scaling = sqrt(15 / (6*375)) = sqrt(15/2250) ≈ 0.0816
+    # straddle = 200, spot = 22000 → raw implied = 0.909%
+    # scaled implied = 0.909% * 0.0816 ≈ 0.074%
+    # realized range = (22150 - 21850) / 22000 = 1.36%
+    # ratio = 1.36 / 0.074 ≈ 18.4 → well above 1.0 → GREEN
     atm = make_atm(22000, ce_ltp=100, pe_ltp=100)
     buf = deque([make_candle(22000)] * 14, maxlen=15)
-    # 300 pts realized high-low => > 1.36% realized move. > implied so > 1.0 => GREEN
     buf.append(make_candle(22150, low=21850, high=22150))
-    res = score_move_ratio(atm, buf)
+    res = score_move_ratio(atm, buf, dte=6)
     assert res.status == "GREEN"
 
 def test_score_vwap_distance_green(make_candle):

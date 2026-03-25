@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **Move Ratio — Time-Horizon Scaling (`processor.py`, `engine.py`):**
+  - Root cause: The implied move (straddle price) represented the expected move over the remaining life of the option (e.g., 6 days), while the realized move was measured over 15 minutes. This structural mismatch caused the ratio to be permanently RED (0.06–0.18 range).
+  - Fix: Applied square-root-of-time scaling to the implied move to bring it down to a 15-minute equivalent before computing the ratio.
+  - Added `max(dte, 1)` guard for division safety on expiry day.
+  - Documented in `directives/adr/ADR-011_move_ratio_time_scaling.md`.
 - **OI Flow — Cycle-Level Delta Implementation (`scheduler.py`, `fetcher.py`):**
   - Root cause: `fetcher.py` was returning a day-level OI delta (cumulative build since yesterday's close). This caused both legs (CE and PE) to always show positive build during market hours, leading to a permanent "Confused" (RED) scoring state.
   - Fix: Moved delta calculation to `scheduler.py`. The scheduler now maintains an in-memory `prev_oi_snapshot` and calculates the delta relative to the previous 1-minute cycle.
