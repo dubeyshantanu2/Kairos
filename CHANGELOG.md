@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **OI Flow — Cycle-Level Delta Implementation (`scheduler.py`, `fetcher.py`):**
+  - Root cause: `fetcher.py` was returning a day-level OI delta (cumulative build since yesterday's close). This caused both legs (CE and PE) to always show positive build during market hours, leading to a permanent "Confused" (RED) scoring state.
+  - Fix: Moved delta calculation to `scheduler.py`. The scheduler now maintains an in-memory `prev_oi_snapshot` and calculates the delta relative to the previous 1-minute cycle.
+  - Removed day-level delta calculation from `fetcher.py` to ensure it remains a stateless API proxy.
+  - Documented decision in `directives/adr/ADR-010_cycle_level_oi_delta.md`.
 - **Initial Session Alert & Boundary Reset (`scheduler.py`):**
   - Root cause: The "proof of life" alert (introduced in ADR-008) only triggered if `previous_status` was `None`. However, the system failed to reset this status when crossing the lunch break boundary, causing the 1:00 PM session to start without an alert if the market status was unchanged from the morning.
   - Fix: Implemented `state.reset_buffers()` call within the session entry gate. This ensures `previous_status` is cleared, triggering the initial alert, and also flushes stale buffers between the morning and afternoon sessions.

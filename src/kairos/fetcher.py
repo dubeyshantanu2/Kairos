@@ -265,7 +265,7 @@ class DhanFetcher:
                         theta=float(greeks.get("theta", 0.0)),
                         vega=float(greeks.get("vega", 0.0)),
                         oi=int(side.get("oi", 0)),
-                        oi_change=int(side.get("oi", 0) - side.get("previous_oi", 0)),
+                        oi_change=0,
                         volume=int(side.get("volume", 0)),
                         ltp=float(side.get("last_price", 0.0)),
                         bid=float(side.get("top_bid_price", 0.0)),

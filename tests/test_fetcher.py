@@ -88,6 +88,12 @@ async def test_fetcher_success(monkeypatch):
     ce_strike = next(r for r in chain if r.option_type == "CE")
     assert ce_strike.strike == 22000
     assert ce_strike.ltp == 50.0
+    assert ce_strike.oi_change == 0
+    
+    pe_strike = next(r for r in chain if r.option_type == "PE")
+    assert pe_strike.strike == 22000
+    assert pe_strike.ltp == 45.0
+    assert pe_strike.oi_change == 0
     
     await fetcher.stop()
 

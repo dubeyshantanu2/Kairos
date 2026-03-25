@@ -41,6 +41,9 @@ class SessionState:
         self.vwap_cumulative_volume: int = 0
         self.vwap_cumulative_num: float = 0.0
 
+        # OI snapshot for cycle-level delta
+        self.prev_oi_snapshot: dict[tuple[int, str], int] = {}
+
         # Session tracking
         self.active_config: Optional[SessionConfig] = None
         self.prev_levels: Optional[PreviousDayLevels] = None
@@ -69,6 +72,7 @@ class SessionState:
         self.iv_buffer.clear()
         self.vwap_cumulative_volume = 0
         self.vwap_cumulative_num = 0.0
+        self.prev_oi_snapshot = {}
         self.cycle_count = 0
         self.warmup_complete = False
         self.previous_status = None
@@ -258,6 +262,17 @@ async def run_cycle() -> None:
         typical_price = (latest_candle.high + latest_candle.low + latest_candle.close) / 3
         state.vwap_cumulative_volume += latest_candle.volume
         state.vwap_cumulative_num += typical_price * latest_candle.volume
+
+        # Calculate cycle-level OI change using snapshot
+        for row in option_chain:
+            key = (row.strike, row.option_type)
+            if key in state.prev_oi_snapshot:
+                row.oi_change = row.oi - state.prev_oi_snapshot[key]
+            else:
+                row.oi_change = 0  # first cycle or new strike — no prior snapshot
+
+        # Update snapshot for next cycle
+        state.prev_oi_snapshot = {(r.strike, r.option_type): r.oi for r in option_chain}
 
         state.last_fetch_time = datetime.now(IST)
         if state.api_warning_sent:
