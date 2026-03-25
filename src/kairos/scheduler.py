@@ -365,12 +365,14 @@ async def run_cycle() -> None:
             f"(score {score.score}/8)"
         )
         
-        # Only alert for Signal Start (entering GO) or Signal End (leaving GO)
-        # This reduces noise while preserving actionable signals per ADR-007.
+        # Only alert for Signal Start (entering GO), Signal End (leaving GO),
+        # or the very first cycle of a session (proof of life).
+        # This reduces noise while preserving actionable signals per ADR-007/008.
         is_signal_start = (score.status == "GO")
         is_signal_end = (state.previous_status == "GO")
+        is_first_cycle = (state.previous_status is None)
         
-        if is_signal_start or is_signal_end:
+        if is_signal_start or is_signal_end or is_first_cycle:
             await notifier.post_environment_alert(score)
         else:
             logger.info(f"Discord: environment alert suppressed for {score.status} (noise reduction)")

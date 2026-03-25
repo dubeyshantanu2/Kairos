@@ -117,6 +117,8 @@ async def test_run_cycle(mock_dependencies, dummy_session, dummy_candle, dummy_l
     
     # Verify DB writing was invoked mapping a healthy execution frame
     sched.db.write_environment_log.assert_called_once()
+    # Verify first cycle alert was sent (ADR-008)
+    sched.notifier.post_environment_alert.assert_called_once()
     assert getattr(sched.state, "cycle_count") == 1
 
 @pytest.mark.asyncio
@@ -312,5 +314,34 @@ async def test_run_cycle_signal_end(mock_dependencies, dummy_session, dummy_cand
     # SHOULD be called when leaving GO
     sched.notifier.post_environment_alert.assert_called_once()
     assert sched.state.previous_status == "AVOID"
+
+@pytest.mark.asyncio
+async def test_run_cycle_first_alert_and_subsequent_suppression(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify first cycle alerts (proof of life) and subsequent suppression for same status."""
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    # 1. First cycle (AVOID) -> Should alert
+    avoid_score = dummy_score.model_copy()
+    avoid_score.status = "AVOID"
+    mocker.patch("kairos.scheduler.evaluate", return_value=avoid_score)
+    
+    await sched.run_cycle()
+    sched.notifier.post_environment_alert.assert_called_once()
+    sched.notifier.post_environment_alert.reset_mock()
+    
+    # 2. Second cycle (Same status AVOID) -> Should NOT alert
+    await sched.run_cycle()
+    sched.notifier.post_environment_alert.assert_not_called()
 
 
