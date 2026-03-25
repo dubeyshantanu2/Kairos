@@ -96,4 +96,9 @@ If Condition 1 (IV Change Rate) evaluates to **🔴 RED** (IV is actively contra
 * But the IV Condition is 🔴 RED...
 * The engine forcibly lowers the final status to **🟡 CAUTION**, attaches an `iv_capped = TRUE` flag, and gracefully informs the orchestrator not to broadcast a GO signal.
 
-This ensures that the trader is never told a setup is "perfect" while underlying premiums are actively being drained by falling volatility.
+**Anti-Flap Hysteresis (ADR-012):**
+To prevent the status from flickering between `AVOID` and `CAUTION` due to tiny fluctuations near zero, the system applies hysteresis to the cap:
+- **Trigger:** The cap turns ON immediately when IV contraction is detected (RED status).
+- **Release:** Once active, the cap is only released if IV recovers meaningfully (expansion >= +0.30).
+- **Retention:** If IV change is positive but below +0.30, the `iv_capped` flag remains `True`, and the status is held at `CAUTION`.
+

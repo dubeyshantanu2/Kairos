@@ -14,5 +14,7 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-009 | Refined Logging & Rotation Strategy | 2026-03-25 | Proposed |
 | ADR-010 | Cycle-Level OI Delta Calculation | 2026-03-25 | Active |
 | ADR-011 | Move Ratio Time-Horizon Scaling | 2026-03-25 | Active |
+| ADR-012 | Anti-Flap Hysteresis for IV Cap | 2026-03-25 | Active |
+
 
 

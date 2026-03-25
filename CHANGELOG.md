@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Fixed
+- **IV Flickering — Anti-Flap Hysteresis (`scheduler.py`, `config.py`):**
+  - Root cause: Tiny fluctuations in IV change around zero caused the IV cap to toggle on/off every minute, resulting in an alternating `AVOID`→`CAUTION` status loop.
+  - Fix: Implemented hysteresis logic where the IV cap, once triggered, is only released if IV recovers by `>= 0.30`.
+  - Added `iv_cap_active` state to `SessionState` to track cross-cycle cap status.
+  - Documented in `directives/adr/ADR-012_iv_cap_hysteresis.md`.
+
 - **Move Ratio — Time-Horizon Scaling (`processor.py`, `engine.py`):**
   - Root cause: The implied move (straddle price) represented the expected move over the remaining life of the option (e.g., 6 days), while the realized move was measured over 15 minutes. This structural mismatch caused the ratio to be permanently RED (0.06–0.18 range).
   - Fix: Applied square-root-of-time scaling to the implied move to bring it down to a 15-minute equivalent before computing the ratio.

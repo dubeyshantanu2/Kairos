@@ -65,6 +65,8 @@ class SessionState:
         # API health
         self.dhan_ok: bool = True
         self.supabase_ok: bool = True
+        self.iv_cap_active: bool = False
+
 
     def reset_buffers(self) -> None:
         """Reset all in-memory state when a new session starts."""
@@ -79,7 +81,9 @@ class SessionState:
         self.consecutive_failures = 0
         self.api_warning_sent = False
         self.stale_alert_sent = False
+        self.iv_cap_active = False
         logger.info("SessionState: buffers reset for new session")
+
 
     @property
     def warmup_cycles_remaining(self) -> int:
@@ -367,11 +371,31 @@ async def run_cycle() -> None:
         logger.error(f"Scoring failed: {e}")
         return
 
-    # 9. Write to Supabase
+    # 9. Hysteresis: IV cap turns ON immediately when RED, turns OFF only after sustained recovery
+    iv_condition = score.get_condition("iv_trend")
+    iv_change_val = 0.0
+    if iv_condition and iv_condition.status != "YELLOW":
+        try:
+            # detail format: "+0.10 — mild expansion" or "-0.05 — contracting"
+            iv_change_val = float(iv_condition.detail.split()[0])
+        except (ValueError, IndexError):
+            iv_change_val = 0.0
+
+    if score.iv_capped:
+        state.iv_cap_active = True
+    elif state.iv_cap_active and iv_change_val < settings.iv_cap_release_threshold:
+        score.iv_capped = True
+        if score.status == "GO":
+            score.status = "CAUTION"
+    else:
+        state.iv_cap_active = False
+
+    # 10. Write to Supabase
     await db.write_environment_log(score)
     state.last_successful_cycle_time = datetime.now(IST)
 
-    # 10. State change detection and Discord alert
+    # 11. State change detection and Discord alert
+
     if score.state_changed:
         logger.info(
             f"State change: {state.previous_status} → {score.status} "

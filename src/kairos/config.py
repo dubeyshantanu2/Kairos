@@ -103,6 +103,8 @@ class Settings(BaseSettings):
     # Total max score = 8 (IV=2, all others=1 each)
     score_go_min: int = 7        # 7–8 → GO
     score_caution_min: int = 4   # 4–6 → CAUTION; 0–3 → AVOID
+    iv_cap_release_threshold: float = 0.30  # IV must expand by this much to release the cap
+
 
 
 # Module-level singleton — import this everywhere

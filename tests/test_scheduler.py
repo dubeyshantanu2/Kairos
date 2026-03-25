@@ -382,3 +382,66 @@ async def test_run_cycle_session_transition_resets_state(mock_dependencies, dumm
     sched.notifier.post_environment_alert.assert_called_once()
 
 
+@pytest.mark.asyncio
+async def test_iv_cap_hysteresis_holds(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify that the IV cap is held if recovery is below threshold (0.3)."""
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.iv_cap_active = True  # cap was already triggered last cycle
+
+    from kairos.models import ConditionResult
+    mild_iv_score = dummy_score.model_copy()
+    mild_iv_score.status = "CAUTION"
+    mild_iv_score.iv_capped = False  # engine says not capped (IV slightly positive)
+    mild_iv_score.conditions = [
+        ConditionResult(name="iv_trend", status="YELLOW", points=1, max_points=2, detail="+0.10 — mild expansion"),
+    ]
+
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    mocker.patch("kairos.scheduler.evaluate", return_value=mild_iv_score)
+
+    await sched.run_cycle()
+    assert sched.state.iv_cap_active is True  # cap should still be held
+    assert mild_iv_score.iv_capped is True     # logic should have overridden it
+
+
+@pytest.mark.asyncio
+async def test_iv_cap_hysteresis_releases(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify that the IV cap is released if recovery is above threshold (0.3)."""
+    import kairos.scheduler as sched
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    sched.state.iv_cap_active = True  # cap was already triggered last cycle
+
+    from kairos.models import ConditionResult
+    strong_iv_score = dummy_score.model_copy()
+    strong_iv_score.status = "GO"
+    strong_iv_score.iv_capped = False
+    strong_iv_score.conditions = [
+        ConditionResult(name="iv_trend", status="GREEN", points=2, max_points=2, detail="+0.35 — strong expansion"),
+    ]
+
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    mocker.patch("kairos.scheduler.evaluate", return_value=strong_iv_score)
+
+    await sched.run_cycle()
+    assert sched.state.iv_cap_active is False  # cap should be released
+    assert strong_iv_score.iv_capped is False
+
+
+
