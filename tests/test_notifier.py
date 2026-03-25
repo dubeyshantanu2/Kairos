@@ -42,14 +42,20 @@ async def test_notifier_start_stop():
 @pytest.mark.asyncio
 @respx.mock
 async def test_post_environment_alert(dummy_score):
-    respx.post(settings.discord_webhook_url).respond(status_code=204)
+    route = respx.post(settings.discord_webhook_url).respond(status_code=204)
     notifier = Notifier()
     await notifier.start()
     
-    # Should strictly not raise any exceptions
+    # dummy_score has iv_capped=False, score=8
     await notifier.post_environment_alert(dummy_score)
-    
     await notifier.stop()
+
+    # Verify payload — no cap note
+    call = route.calls.last
+    content = call.request.content.decode()
+    assert "⚠️ IV Cap Active" not in content
+    assert "⚠️ Capped at CAUTION" not in content
+    assert "⚠️ IV contracting" not in content
 
 @pytest.mark.asyncio
 @respx.mock
@@ -97,3 +103,94 @@ async def test_all_notifier_methods():
     await notifier.post_session_boundary(True, "Morning")
     
     await notifier.stop()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_iv_cap_message_suppressed_at_low_score(dummy_score):
+    # iv_capped=True but score=3 — cap had no effect, header badge should not appear
+    route = respx.post(settings.discord_webhook_url).respond(status_code=204)
+    capped_low_score = dummy_score.model_copy()
+    capped_low_score.iv_capped = True
+    capped_low_score.score = 3
+    capped_low_score.status = "AVOID"
+    
+    notifier = Notifier()
+    await notifier.start()
+    await notifier.post_environment_alert(capped_low_score)
+    await notifier.stop()
+    
+    # Verify payload
+    call = route.calls.last
+    content = call.request.content.decode()
+    assert "⚠️ IV Cap Active" not in content
+    assert "⚠️ IV contracting — premium at risk" in content
+    assert "⚠️ Capped at CAUTION" not in content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_iv_cap_message_shown_at_high_score(dummy_score):
+    # iv_capped=True and score=8 — cap has effect, header badge should appear
+    route = respx.post(settings.discord_webhook_url).respond(status_code=204)
+    capped_high_score = dummy_score.model_copy()
+    capped_high_score.iv_capped = True
+    capped_high_score.score = 8
+    capped_high_score.status = "CAUTION"
+    
+    notifier = Notifier()
+    await notifier.start()
+    await notifier.post_environment_alert(capped_high_score)
+    await notifier.stop()
+    
+    # Verify payload
+    call = route.calls.last
+    content = call.request.content.decode()
+    assert "⚠️ IV Cap Active" in content
+    assert "⚠️ Capped at CAUTION — IV contracting" in content
+    assert "⚠️ IV contracting — premium at risk" not in content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_iv_cap_at_boundary_score(dummy_score):
+    # iv_capped=True and score=7 — exactly at boundary, should show cap note
+    route = respx.post(settings.discord_webhook_url).respond(status_code=204)
+    capped_score = dummy_score.model_copy()
+    capped_score.iv_capped = True
+    capped_score.score = 7
+    capped_score.status = "CAUTION"
+    
+    notifier = Notifier()
+    await notifier.start()
+    await notifier.post_environment_alert(capped_score)
+    await notifier.stop()
+    
+    # Verify payload
+    call = route.calls.last
+    content = call.request.content.decode()
+    assert "⚠️ IV Cap Active" in content
+    assert "⚠️ Capped at CAUTION — IV contracting" in content
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_iv_cap_just_below_boundary_score(dummy_score):
+    # iv_capped=True and score=6 — just below boundary, should be suppressed
+    route = respx.post(settings.discord_webhook_url).respond(status_code=204)
+    capped_score = dummy_score.model_copy()
+    capped_score.iv_capped = True
+    capped_score.score = 6
+    capped_score.status = "CAUTION"
+    
+    notifier = Notifier()
+    await notifier.start()
+    await notifier.post_environment_alert(capped_score)
+    await notifier.stop()
+    
+    # Verify payload
+    call = route.calls.last
+    content = call.request.content.decode()
+    assert "⚠️ IV Cap Active" not in content
+    assert "⚠️ IV contracting — premium at risk" in content
+    assert "⚠️ Capped at CAUTION" not in content

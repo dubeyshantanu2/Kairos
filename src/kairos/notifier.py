@@ -77,7 +77,7 @@ class Notifier:
         Only called when state changes.
         """
         status_emoji = STATUS_EMOJI.get(score.status, "⚪")
-        cap_note = "  ⚠️ IV Cap Active" if score.iv_capped else ""
+        cap_note = "  ⚠️ IV Cap Active" if (score.iv_capped and score.score >= settings.score_go_min) else ""
 
         # Build condition lines
         condition_lines = []
@@ -105,8 +105,10 @@ class Notifier:
             f"Score    : {score.score}/{score.max_score}",
         ]
 
-        if score.iv_capped:
+        if score.iv_capped and score.score >= settings.score_go_min:
             lines.append(f"⚠️ Capped at CAUTION — IV contracting")
+        elif score.iv_capped:
+            lines.append(f"⚠️ IV contracting — premium at risk")
 
         lines.append(summary_text)
         lines.append(f"🕐 {time_str}")
