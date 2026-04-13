@@ -54,6 +54,11 @@ class Notifier:
         content = payload.get("content", "")
         content_snippet = content[:100].replace("\n", " ")
         logger.info(f"📢 Discord Message -> Content: {content_snippet}...")
+        
+        if not webhook_url or not webhook_url.startswith("http"):
+            logger.error(f"Failed to post to Discord: Webhook URL is invalid or not configured correctly in .env. Skipping.")
+            return
+            
         if not self._client:
             logger.error("Notifier not started")
             return
@@ -307,7 +312,7 @@ def _get_session_label() -> str:
 
 def _expiry_type_label(score: EnvironmentScore) -> str:
     """Returns 'Weekly' or 'Monthly' — reads from environment_log not directly available here."""
-    return "Weekly"   # OpenClaw enriches this from session_config
+    return "Weekly"   # Discord Orchestrator enriches this from session_config
 
 
 def _generate_fallback_summary(score: EnvironmentScore) -> str:

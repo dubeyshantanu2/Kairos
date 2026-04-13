@@ -41,8 +41,8 @@ class SessionState:
         self.vwap_cumulative_volume: int = 0
         self.vwap_cumulative_num: float = 0.0
 
-        # OI snapshot for cycle-level delta
-        self.prev_oi_snapshot: dict[tuple[int, str], int] = {}
+        # OI snapshot buffer for multi-cycle delta (5-minute lookback)
+        self.oi_snapshot_buffer: deque[dict[tuple[int, str], int]] = deque(maxlen=settings.oi_lookback_cycles)
 
         # Session tracking
         self.active_config: Optional[SessionConfig] = None
@@ -74,7 +74,7 @@ class SessionState:
         self.iv_buffer.clear()
         self.vwap_cumulative_volume = 0
         self.vwap_cumulative_num = 0.0
-        self.prev_oi_snapshot = {}
+        self.oi_snapshot_buffer = deque(maxlen=settings.oi_lookback_cycles)
         self.cycle_count = 0
         self.warmup_complete = False
         self.previous_status = None
@@ -210,6 +210,25 @@ async def run_cycle() -> None:
             logger.info("Session stopped")
         return
 
+    # Ignore active sessions that have an expired date
+    if config.expiry < date.today():
+        if state.active_config is None or state.active_config.expiry != config.expiry or state.active_config.symbol != config.symbol:
+            logger.warning(f"Active session expiry {config.expiry} is in the past. Ignoring until a new session starts.")
+            state.active_config = config
+            state.startup_done = False
+            
+            # Fetch fresh expiries anyway so Discord Orchestrator has April dates available
+            try:
+                expiries = await fetcher.get_available_expiries(config.symbol)
+                await db.write_available_expiries(expiries)
+                logger.info(f"Refreshed {len(expiries)} expiries for {config.symbol} despite stale session.")
+            except Exception as e:
+                logger.warning(f"Failed to refresh available expiries for stale session {config.symbol}: {e}")
+
+        if state.in_session:
+            state.in_session = False
+        return
+
     # First time we see an active config — run startup
     if not state.startup_done:
         state.active_config = config
@@ -267,16 +286,29 @@ async def run_cycle() -> None:
         state.vwap_cumulative_volume += latest_candle.volume
         state.vwap_cumulative_num += typical_price * latest_candle.volume
 
-        # Calculate cycle-level OI change using snapshot
-        for row in option_chain:
-            key = (row.strike, row.option_type)
-            if key in state.prev_oi_snapshot:
-                row.oi_change = row.oi - state.prev_oi_snapshot[key]
-            else:
-                row.oi_change = 0  # first cycle or new strike — no prior snapshot
+        # Calculate multi-cycle OI delta (5-minute lookback per ADR-010 revision)
+        # This reduces noise from 1-min fluctuations and detects sustained conviction.
+        if state.oi_snapshot_buffer:
+            # Compare against the oldest available snapshot in the rolling buffer.
+            # If buffer size is 5, this is exactly the OI from 5 minutes ago.
+            baseline = state.oi_snapshot_buffer[0]
+            for row in option_chain:
+                key = (row.strike, row.option_type)
+                if key in baseline:
+                    row.oi_change = row.oi - baseline[key]
+                else:
+                    # New strike appears (not in baseline) — default to 0 delta
+                    row.oi_change = 0  
+        else:
+            # First cycle of session: we have no buffer history.
+            # Fall back to Dhan's 'previous_oi' which represents the daily delta.
+            for row in option_chain:
+                row.oi_change = row.oi - row.previous_oi
 
-        # Update snapshot for next cycle
-        state.prev_oi_snapshot = {(r.strike, r.option_type): r.oi for r in option_chain}
+        # Push current snapshot into the rolling buffer
+        state.oi_snapshot_buffer.append(
+            {(r.strike, r.option_type): r.oi for r in option_chain}
+        )
 
         state.last_fetch_time = datetime.now(IST)
         if state.api_warning_sent:
@@ -347,8 +379,10 @@ async def run_cycle() -> None:
     state.cycle_count += 1
 
     # 6. Check warmup
+    just_warmed_up = False
     if not state.warmup_complete and state.check_warmup_complete():
         state.warmup_complete = True
+        just_warmed_up = True
         await notifier.post_warmup_complete(config.symbol)
         logger.info("Warmup complete — all conditions scoring normally")
 
@@ -396,20 +430,21 @@ async def run_cycle() -> None:
 
     # 11. State change detection and Discord alert
 
-    if score.state_changed:
-        logger.info(
-            f"State change: {state.previous_status} → {score.status} "
-            f"(score {score.score}/8)"
-        )
+    if score.state_changed or just_warmed_up:
+        if score.state_changed:
+            logger.info(
+                f"State change: {state.previous_status} → {score.status} "
+                f"(score {score.score}/8)"
+            )
         
         # Only alert for Signal Start (entering GO), Signal End (leaving GO),
         # or the very first cycle of a session (proof of life).
-        # This reduces noise while preserving actionable signals per ADR-007/008.
+        # We also trigger an alert automatically right after Warmup completes!
         is_signal_start = (score.status == "GO")
         is_signal_end = (state.previous_status == "GO")
         is_first_cycle = (state.previous_status is None)
         
-        if is_signal_start or is_signal_end or is_first_cycle:
+        if is_signal_start or is_signal_end or is_first_cycle or just_warmed_up:
             await notifier.post_environment_alert(score)
         else:
             logger.info(f"Discord: environment alert suppressed for {score.status} (noise reduction)")

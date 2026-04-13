@@ -14,7 +14,7 @@ Regardless of how many conditions align (Momentum, Delta, PDH break) equating to
 ### Resulting Action
 - The Score is capped to a maximum status of `🟡 CAUTION`.
 - The `iv_capped` boolean is assigned `True`.
-- The orchestrator (OpenClaw) receives an immediate tag strictly appending: `"⚠️ Strong conditions but IV contracting — wait for IV to stabilize."`
+- The orchestrator receives an immediate tag strictly appending: `"⚠️ Strong conditions but IV contracting — wait for IV to stabilize."`
 
 ## Alternatives Considered
 - **Allowing GO but warning the user:** Relying on human discipline to notice the IV warning mid-trade was deemed unreliable given the high-stress nature of scalping.

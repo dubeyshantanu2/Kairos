@@ -25,6 +25,7 @@ class OptionChainRow(BaseModel):
     theta: float
     vega: float
     oi: int                      # open interest
+    previous_oi: int = 0         # previous day's close OI (from Dhan API)
     oi_change: int               # OI change vs previous snapshot
     volume: int
     ltp: float                   # last traded price
@@ -160,7 +161,7 @@ class EnvironmentScore(BaseModel):
     iv_capped: bool = False               # True if IV contraction cap was applied
     conditions: list[ConditionResult]     # all 7 condition results
     summary_raw: str                      # Python-generated template string
-    summary: str = ""                     # Gemini-polished (filled by OpenClaw)
+    summary: str = ""                     # Gemini-polished (filled by Discord Orchestrator)
     previous_status: Optional[str] = None # previous cycle's status for change detection
 
     @field_validator("status")

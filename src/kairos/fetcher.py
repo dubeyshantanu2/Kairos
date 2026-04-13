@@ -253,6 +253,8 @@ class DhanFetcher:
                     continue
                 greeks = side.get("greeks", {})
                 try:
+                    raw_oi = int(side.get("oi", 0))
+                    raw_prev_oi = int(side.get("previous_oi", 0))
                     rows.append(OptionChainRow(
                         timestamp=now,
                         symbol=symbol,
@@ -264,7 +266,8 @@ class DhanFetcher:
                         gamma=float(greeks.get("gamma", 0.0)),
                         theta=float(greeks.get("theta", 0.0)),
                         vega=float(greeks.get("vega", 0.0)),
-                        oi=int(side.get("oi", 0)),
+                        oi=raw_oi,
+                        previous_oi=raw_prev_oi,
                         oi_change=0,
                         volume=int(side.get("volume", 0)),
                         ltp=float(side.get("last_price", 0.0)),

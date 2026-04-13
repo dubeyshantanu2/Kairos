@@ -1,6 +1,6 @@
 """
 db.py — Supabase client. Reads and writes to exactly 4 tables.
-This is the shared state bridge between Python and OpenClaw.
+This is the shared state bridge between Python and Discord Orchestrator.
 No raw market data is stored here — only scores and session config.
 """
 
@@ -64,7 +64,7 @@ class SupabaseDB:
 
     async def get_active_session(self) -> Optional[SessionConfig]:
         """
-        Read the active session config written by OpenClaw after /start-monitor.
+        Read the active session config written by Discord Orchestrator after /start-monitor.
         Returns None if no active session exists.
         """
         self._check_client()
@@ -90,6 +90,38 @@ class SupabaseDB:
             logger.error(f"Failed to read session_config: {e}")
             return None
 
+    async def set_active_session(self, symbol: str, expiry: date, expiry_type: str = "WEEKLY") -> None:
+        """
+        Set a new active session via CLI, bypassing Discord.
+        Marks all existing ACTIVE sessions as STOPPED first.
+        """
+        self._check_client()
+        try:
+            # Mark existing active sessions as STOPPED
+            await self._client.table("session_config").update({"status": "STOPPED"}).eq("status", "ACTIVE").execute()
+            
+            # Insert the new session
+            await self._client.table("session_config").insert({
+                "symbol": symbol,
+                "expiry": expiry.isoformat(),
+                "expiry_type": expiry_type,
+                "status": "ACTIVE"
+            }).execute()
+            logger.info(f"CLI override: Started {symbol} {expiry_type} session for {expiry}")
+        except Exception as e:
+            logger.error(f"CLI override failed: {e}")
+            raise
+
+    async def stop_active_session(self) -> None:
+        """Stops any currently ACTIVE session."""
+        self._check_client()
+        try:
+            await self._client.table("session_config").update({"status": "STOPPED"}).eq("status", "ACTIVE").execute()
+            logger.info("CLI override: Stopped active session")
+        except Exception as e:
+            logger.error(f"CLI override stop failed: {e}")
+            raise
+
     # ─────────────────────────────────────────────────────────────────────
     # available_expiries table
     # ─────────────────────────────────────────────────────────────────────
@@ -99,7 +131,7 @@ class SupabaseDB:
         expiries: list[AvailableExpiry],
     ) -> None:
         """
-        Write fresh expiry list to Supabase so OpenClaw can build the dropdown.
+        Write fresh expiry list to Supabase so Discord Orchestrator can build the dropdown.
         Clears old rows for the symbol first.
         """
         self._check_client()

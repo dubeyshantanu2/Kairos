@@ -103,7 +103,7 @@ def _build_summary_raw(
     """
     Build a compact machine-readable summary string.
     This gets stored in environment_log.summary_raw.
-    Gemini/OpenClaw polishes this into the final Discord message.
+    Gemini/Discord Orchestrator polishes this into the final Discord message.
     """
     parts = []
     for c in conditions:

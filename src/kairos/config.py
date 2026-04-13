@@ -74,7 +74,8 @@ class Settings(BaseSettings):
     momentum_trend_count_green: int = 4          # out of 5 candles trending
     momentum_trend_count_yellow: int = 3
 
-    # ── Condition 3: OI Flow (no numeric threshold — logic based) ─────────
+    # ── Condition 3: OI Flow ─────────────────────────────────────────────
+    oi_lookback_cycles: int = 5        # compare OI against N cycles ago (5 = 5 min)
 
     # ── Condition 4: Gamma/Theta — DTE-scaled ────────────────────────────
     # DTE >= 3 (lenient — early week, plenty of time)

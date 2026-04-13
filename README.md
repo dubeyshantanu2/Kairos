@@ -8,28 +8,28 @@ It does **not** generate trade signals. Instead, it acts as a live weather repor
 
 ## 🏗 System Architecture
 
-The trading environment is entirely orchestrated through Discord via the OpenClaw bot. The Python Engine (this repository) runs headlessly on a VPS and communicates exclusively through an asynchronous **Supabase Shared State Bridge**.
+The trading environment is entirely orchestrated through Discord via the Discord orchestrator bot. The Python Engine (this repository) runs headlessly on a VPS and communicates exclusively through an asynchronous **Supabase Shared State Bridge**.
 
 ```mermaid
 graph TD
     %% Entities
     User((Trader))
     Discord[Discord App]
-    OpenClaw[OpenClaw Bot\nDiscord Orchestrator]
+    Orchestrator[Discord Orchestrator\nBot]
     Supabase[(Supabase\nPostgreSQL)]
     Kairos[Kairos Python Engine\nVPS Headless]
     Dhan[Dhan API]
     
     %% Flows
     User -->|/start-monitor| Discord
-    Discord --> OpenClaw
-    OpenClaw -->|Writes session_config| Supabase
+    Discord --> Orchestrator
+    Orchestrator -->|Writes session_config| Supabase
     
     Kairos -->|Reads session_config| Supabase
     Kairos -->|Polls live market data| Dhan
     
     Kairos -->|Calculates 7 Conditions\nWrites summary_raw| Supabase
-    OpenClaw -->|Transforms summary via Gemini| Supabase
+    Orchestrator -->|Transforms summary via Gemini| Supabase
     
     Kairos -->|State changed?\nBroadcast Alert Wehbook| Discord
     Discord -->|#environment /\n#system-check| User
@@ -41,7 +41,7 @@ graph TD
 
 If you are expanding this repository or integrating the orchestrator, please review the core documentation files before modifying logic:
 
-- **[OpenClaw Context & Integration Guide](docs/integration.md):** Exact responsibilities and database map for the Discord Bot side.
+- **[Discord Bot Integration Guide](docs/integration.md):** Exact responsibilities and database map for the Discord Bot side.
 - **[Mathematical Scoring Architecture](docs/scoring_architecture.md):** The absolute source-of-truth for the 7 scoring condition parameters, lookback windows, and IV Cap logic.
 - **[Architecture Decision Records (ADRs)](directives/adr/INDEX.md):** The historical log of system design choices, including why Supabase was chosen over WebSockets.
 - **[Changelog](CHANGELOG.md):** Build milestones and test suite updates.
@@ -67,11 +67,14 @@ Copy the `.env.example` to `.env` and fill out your local secrets.
 | Variable | Description |
 |---|---|
 | `DHAN_CLIENT_ID` | Your Dhan HQ Client ID. |
-| `DHAN_ACCESS_TOKEN` | Generated Dhan HQ Access Token. |
+| `DHAN_ACCESS_TOKEN` | (Optional) Dhan HQ Access Token. If provided, TOTP is bypassed. |
+| `DHAN_CLIENT_PIN` | (Required for TOTP) 4-digit Dhan login PIN. |
+| `DHAN_TOTP_SECRET` | (Required for TOTP) The 32-character seed (Key) from Dhan's 2FA setup. |
 | `SUPABASE_URL` | Your Supabase project URL (`https://xyz.supabase.co`). |
 | `SUPABASE_KEY` | Public `anon` API key for Supabase restricted via RLS. |
 | `DISCORD_WEBHOOK_URL` | Webhook URL for the `#environment` channel. |
 | `DISCORD_HEALTH_WEBHOOK_URL`| Webhook URL for the `#system-check` channel. |
+| `OI_LOOKBACK_CYCLES` | (Optional) Num cycles for OI delta calculation (default: 5). |
 
 ### 3. Running the Test Suite
 The codebase includes an exhaustive `pytest` suite ensuring all mathematical thresholds map to the correct 🟢/🟡/🔴 point system.
@@ -84,3 +87,13 @@ python -m pytest tests/ -v
 python -m kairos.scheduler
 ```
 *(Ensure a valid session is marked as `ACTIVE` inside your Supabase `session_config` table, otherwise the engine will gracefully idle.)*
+
+### 5. Direct CLI Control (Bypass Discord)
+For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.
+```bash
+# Start monitoring NIFTY for a specific expiry
+python execution/control_panel.py start NIFTY 2026-04-16 --type WEEKLY
+
+# Stop the active session
+python execution/control_panel.py stop
+```

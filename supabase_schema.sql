@@ -5,7 +5,7 @@
 
 
 -- ── Table: session_config ────────────────────────────────────
--- Written by OpenClaw after /start-monitor
+-- Written by Discord Orchestrator after /start-monitor
 -- Read by Python every cycle to get active symbol + expiry
 
 create table if not exists session_config (
@@ -24,7 +24,7 @@ create index if not exists idx_session_config_status
 
 -- ── Table: available_expiries ────────────────────────────────
 -- Written by Python at /start-monitor trigger
--- Read by OpenClaw to build the expiry dropdown in Discord
+-- Read by Discord Orchestrator to build the expiry dropdown in Discord
 
 create table if not exists available_expiries (
     id          serial primary key,
@@ -53,7 +53,7 @@ create table if not exists previous_day_levels (
 -- ── Table: environment_log ───────────────────────────────────
 -- Written by Python every cycle (1 row per minute)
 -- Read by Python for state-change detection (last row only)
--- Read by OpenClaw to build Discord embed
+-- Read by Discord Orchestrator to build Discord embed
 
 create table if not exists environment_log (
     id              serial primary key,
@@ -72,7 +72,7 @@ create table if not exists environment_log (
     vwap_distance   text not null,
     iv_capped       boolean not null default false,
     summary_raw     text,                           -- Python-generated template string
-    summary         text                            -- Gemini-polished (filled by OpenClaw)
+    summary         text                            -- Gemini-polished (filled by Discord Orchestrator)
 );
 
 -- Critical index — used every cycle for state-change detection
