@@ -37,10 +37,6 @@ class SessionState:
         self.candle_buffer: deque = deque(maxlen=settings.candle_buffer_size)
         self.iv_buffer: deque = deque(maxlen=settings.iv_buffer_size)
 
-        # Incremental VWAP accumulators (reset each session)
-        self.vwap_cumulative_volume: int = 0
-        self.vwap_cumulative_num: float = 0.0
-
         # OI snapshot buffer for multi-cycle delta (5-minute lookback)
         self.oi_snapshot_buffer: deque[dict[tuple[int, str], int]] = deque(maxlen=settings.oi_lookback_cycles)
 
@@ -73,8 +69,6 @@ class SessionState:
         """Reset all in-memory state when a new session starts."""
         self.candle_buffer.clear()
         self.iv_buffer.clear()
-        self.vwap_cumulative_volume = 0
-        self.vwap_cumulative_num = 0.0
         self.oi_snapshot_buffer = deque(maxlen=settings.oi_lookback_cycles)
         self.cycle_count = 0
         self.warmup_complete = False
@@ -291,17 +285,8 @@ async def run_cycle() -> None:
     try:
         option_chain, latest_candle = await asyncio.gather(
             fetcher.get_option_chain(config.symbol, config.expiry),
-            fetcher.get_latest_candle(
-                config.symbol,
-                cumulative_volume=state.vwap_cumulative_volume,
-                cumulative_vwap_num=state.vwap_cumulative_num,
-            ),
+            fetcher.get_latest_candle(config.symbol),
         )
-
-        # Update VWAP accumulators
-        typical_price = (latest_candle.high + latest_candle.low + latest_candle.close) / 3
-        state.vwap_cumulative_volume += latest_candle.volume
-        state.vwap_cumulative_num += typical_price * latest_candle.volume
 
         # Calculate multi-cycle OI delta (5-minute lookback per ADR-010 revision)
         # This reduces noise from 1-min fluctuations and detects sustained conviction.
@@ -422,23 +407,23 @@ async def run_cycle() -> None:
         logger.error(f"Scoring failed: {e}")
         return
 
-    # 9. Hysteresis: IV cap turns ON immediately when RED, turns OFF only after sustained recovery
+    # 9. Hysteresis: IV cap turns ON when RED, turns OFF only when GREEN (ADR-011)
+    #    This prevents the cap from flickering on/off during borderline YELLOW readings.
+    #    Cap ON  = IV Trend scored RED this cycle (engine.py sets iv_capped=True)
+    #    Cap OFF = IV Trend scored GREEN (genuine expansion confirmed)
+    #    Cap HOLD = IV Trend is YELLOW but cap was previously active → keep capping
     iv_condition = score.get_condition("iv_trend")
-    iv_change_val = 0.0
-    if iv_condition and iv_condition.status != "YELLOW":
-        try:
-            # detail format: "+0.10 — mild expansion" or "-0.05 — contracting"
-            iv_change_val = float(iv_condition.detail.split()[0])
-        except (ValueError, IndexError):
-            iv_change_val = 0.0
 
     if score.iv_capped:
+        # Engine flagged RED this cycle — activate cap
         state.iv_cap_active = True
-    elif state.iv_cap_active and iv_change_val < settings.iv_cap_release_threshold:
+    elif state.iv_cap_active and (iv_condition and iv_condition.status != "GREEN"):
+        # Cap was previously active and IV hasn't recovered to GREEN yet — hold cap
         score.iv_capped = True
         if score.status == "GO":
             score.status = "CAUTION"
     else:
+        # Either cap was never active, or IV recovered to GREEN — release
         state.iv_cap_active = False
 
     # 10. Write to Supabase

@@ -25,15 +25,15 @@ def test_score_iv_change_green():
 
 def test_score_iv_change_yellow():
     buf = deque([0.15] * 15, maxlen=20)
-    buf.append(0.5) # 0.5 - 0.15 = 0.35 > 0.0
-    res = score_iv_change(buf)
+    buf.append(0.25) # 0.25 - 0.15 = 0.10 (between -0.5 and +0.2)
+    res = score_iv_change(buf, dte=0)
     assert res.status == "YELLOW"
     assert res.points == 1
 
 def test_score_iv_change_red():
     buf = deque([0.15] * 15, maxlen=20)
-    buf.append(0.10) # 0.10 - 0.15 = -0.05 < 0.0
-    res = score_iv_change(buf)
+    buf.append(-0.45) # -0.45 - 0.15 = -0.60 < -0.5
+    res = score_iv_change(buf, dte=0)
     assert res.status == "RED"
     assert res.points == 0
 

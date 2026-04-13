@@ -284,13 +284,11 @@ class DhanFetcher:
     async def get_latest_candle(
         self,
         symbol: str,
-        cumulative_volume: int = 0,
-        cumulative_vwap_num: float = 0.0,
     ) -> OHLCVCandle:
         """
         Fetch the latest 1-minute OHLCV candle for the underlying index.
-        VWAP is calculated incrementally — caller passes cumulative values.
-        Handles Dhan's root-level array response (timestamp, open, etc.).
+        VWAP is computed from ALL candles returned by the API for the full
+        trading day (true session VWAP), not incrementally per-cycle.
         Dhan endpoint: POST /charts/intraday
 
         """
@@ -327,7 +325,7 @@ class DhanFetcher:
         if not timestamps:
             raise DhanAPIError(f"No candle data returned for {symbol}")
 
-        # Use the last (most recent) candle
+        # Use the last (most recent) candle for OHLCV fields
         idx = -1
         ts = datetime.fromtimestamp(timestamps[idx], tz=IST)
         o = float(opens[idx])
@@ -336,11 +334,26 @@ class DhanFetcher:
         c = float(closes[idx])
         v = int(volumes[idx])
 
-        # Incremental VWAP = cumulative(price * volume) / cumulative(volume)
-        typical_price = (h + lo + c) / 3
-        new_cum_vol = cumulative_volume + v
-        new_cum_num = cumulative_vwap_num + (typical_price * v)
-        vwap = new_cum_num / new_cum_vol if new_cum_vol > 0 else c
+        # Compute full-day VWAP from ALL candles in the response.
+        # VWAP = Σ(typical_price_i × volume_i) / Σ(volume_i)
+        # This gives a true session VWAP that reflects all trading since 09:15.
+        cum_vol = 0
+        cum_num = 0.0
+        for i in range(len(closes)):
+            ci = float(closes[i])
+            hi = float(highs[i])
+            li = float(lows[i])
+            vi = int(volumes[i])
+            tp = (hi + li + ci) / 3
+            cum_vol += vi
+            cum_num += tp * vi
+
+        if cum_vol > 0:
+            vwap = cum_num / cum_vol
+        else:
+            # Fallback: equal-weighted TWAP if all volumes are 0
+            n = len(closes)
+            vwap = sum((float(highs[i]) + float(lows[i]) + float(closes[i])) / 3 for i in range(n)) / n if n > 0 else c
 
         return OHLCVCandle(
             timestamp=ts,

@@ -58,11 +58,18 @@ class Settings(BaseSettings):
     api_retry_delay_seconds: float = 5.0
     stale_signal_threshold_minutes: int = 3   # alert if no cycle for this long
 
-    # ── Condition 1: IV Change Rate ───────────────────────────────────────
+    # ── Condition 1: IV Change Rate — DTE-Scaled (ADR-011) ─────────────────
     # iv_change = ATM_IV_now - ATM_IV_15_minutes_ago
     iv_change_lookback: int = 15          # minutes ago to compare
-    iv_change_green: float = 1.5          # above this → 2 pts
-    iv_change_yellow: float = 0.0         # above this → 1 pt; below → 0 pts + cap
+    # DTE >= 3 (early week — demand real expansion for multi-day holds)
+    iv_change_dte_high_green: float = 0.5
+    iv_change_dte_high_yellow: float = 0.0
+    # DTE = 2 (mid-week — moderate)
+    iv_change_dte_mid_green: float = 0.3
+    iv_change_dte_mid_yellow: float = -0.2
+    # DTE = 0-1 (expiry — accept normal theta-drift, cap only on genuine crush)
+    iv_change_dte_low_green: float = 0.2
+    iv_change_dte_low_yellow: float = -0.5
 
     # ── Condition 2: Momentum + Directional Consistency ───────────────────
     momentum_candle_window: int = 5              # candles for range + trend check
@@ -104,7 +111,6 @@ class Settings(BaseSettings):
     # Total max score = 8 (IV=2, all others=1 each)
     score_go_min: int = 7        # 7–8 → GO
     score_caution_min: int = 4   # 4–6 → CAUTION; 0–3 → AVOID
-    iv_cap_release_threshold: float = 0.30  # IV must expand by this much to release the cap
 
 
 

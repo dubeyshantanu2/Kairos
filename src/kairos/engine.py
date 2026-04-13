@@ -167,7 +167,7 @@ def evaluate(
     atm = find_atm(option_chain, spot_price, strike_interval)
 
     # ── Run all 7 conditions ─────────────────────────────────────────────
-    c1_iv = score_iv_change(iv_buffer)
+    c1_iv = score_iv_change(iv_buffer, dte)
     c2_mom = score_momentum(candle_buffer)
     c3_oi = score_oi_flow(atm)
     c4_gt = score_gamma_theta(atm, dte)

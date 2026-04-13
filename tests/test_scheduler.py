@@ -27,7 +27,7 @@ def mock_dependencies(mocker):
 def dummy_session():
     return SessionConfig(
         symbol="NIFTY",
-        expiry=date(2026, 3, 26),
+        expiry=date.today(),
         expiry_type="WEEKLY",
         status="ACTIVE"
     )
@@ -110,6 +110,10 @@ async def test_run_cycle(mock_dependencies, dummy_session, dummy_candle, dummy_l
 
     sched.notifier.post_warmup_complete = AsyncMock()
     
+    # Need to pretend we are in session regardless of actual time when test runs
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
+
     # Mock evaluate to avoid deep logic requirements here
     mocker.patch("kairos.scheduler.evaluate", return_value=dummy_score)
     
@@ -332,9 +336,14 @@ async def test_run_cycle_first_alert_and_subsequent_suppression(mock_dependencie
     sched.notifier.post_environment_alert = AsyncMock()
     
     # 1. First cycle (AVOID) -> Should alert
-    avoid_score = dummy_score.model_copy()
-    avoid_score.status = "AVOID"
-    mocker.patch("kairos.scheduler.evaluate", return_value=avoid_score)
+    first_score = dummy_score.model_copy()
+    first_score.status = "AVOID"
+    first_score.previous_status = "GO"
+    
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
+
+    evaluate_mock = mocker.patch("kairos.scheduler.evaluate", return_value=first_score)
     
     await sched.run_cycle()
     sched.notifier.post_environment_alert.assert_called_once()
@@ -363,9 +372,13 @@ async def test_run_cycle_session_transition_resets_state(mock_dependencies, dumm
     sched.fetcher.get_option_chain = AsyncMock(return_value=[])
     sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
     sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_api_warning = AsyncMock()
     sched.notifier.post_environment_alert = AsyncMock()
     sched.notifier.post_session_boundary = AsyncMock()
-    
+
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
+
     def evaluate_side_effect(**kwargs):
         res = dummy_score.model_copy()
         res.status = "AVOID"
@@ -406,6 +419,10 @@ async def test_iv_cap_hysteresis_holds(mock_dependencies, dummy_session, dummy_c
     sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
     sched.db.write_environment_log = AsyncMock()
     sched.notifier.post_environment_alert = AsyncMock()
+
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
+
     mocker.patch("kairos.scheduler.evaluate", return_value=mild_iv_score)
 
     await sched.run_cycle()

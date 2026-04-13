@@ -35,17 +35,21 @@ def _caution(name: str, max_points: int, reason: str = "Warming up") -> Conditio
 # Condition 1 — IV Change Rate (max 2 points)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_iv_change(iv_buffer: deque) -> ConditionResult:
+def score_iv_change(iv_buffer: deque, dte: int = 0) -> ConditionResult:
     """
     Measures whether At-The-Money (ATM) Implied Volatility (IV) is expanding or contracting.
     
-    This function compares the current IV against the IV from `iv_change_lookback` (default: 15)
-    periods ago to determine if option premiums are inflating or experiencing theta crush.
+    Compares current IV against IV from `iv_change_lookback` (default: 15) periods ago.
+    Thresholds are DTE-scaled (ADR-011): expiry-day accepts normal theta-drift as YELLOW,
+    while early-week demands genuine expansion before scoring GREEN.
     
     :param iv_buffer: A rolling in-memory deque containing the recent history of IV floats.
     :type iv_buffer: collections.deque
+    :param dte: Days To Expiry — used to select the appropriate threshold tier.
+    :type dte: int
     :return: A ConditionResult mapping the points (Max: 2) and the status. 
-             Returns RED (0 pts) if IV is contracting, which triggers the systemic IV Cap.
+             Returns RED (0 pts) if IV is contracting beyond the DTE-scaled threshold,
+             which triggers the systemic IV Cap.
     :rtype: ConditionResult
     """
     lookback = settings.iv_change_lookback
@@ -58,12 +62,26 @@ def score_iv_change(iv_buffer: deque) -> ConditionResult:
     iv_then = iv_buffer[-lookback]
     change = round(iv_now - iv_then, 3)
 
-    if change > settings.iv_change_green:
-        return _result("iv_trend", "GREEN", 2, 2, f"+{change:.2f} — IV expanding")
-    elif change >= settings.iv_change_yellow:
-        return _result("iv_trend", "YELLOW", 1, 2, f"+{change:.2f} — mild expansion")
+    # Select thresholds based on DTE (ADR-011 — mirrors gamma/theta DTE-scaling)
+    if dte >= 3:
+        green_thresh = settings.iv_change_dte_high_green
+        yellow_thresh = settings.iv_change_dte_high_yellow
+        scale_label = "DTE≥3"
+    elif dte == 2:
+        green_thresh = settings.iv_change_dte_mid_green
+        yellow_thresh = settings.iv_change_dte_mid_yellow
+        scale_label = "DTE=2"
     else:
-        return _result("iv_trend", "RED", 0, 2, f"{change:.2f} — IV contracting")
+        green_thresh = settings.iv_change_dte_low_green
+        yellow_thresh = settings.iv_change_dte_low_yellow
+        scale_label = "DTE≤1"
+
+    if change > green_thresh:
+        return _result("iv_trend", "GREEN", 2, 2, f"+{change:.2f} — IV expanding ({scale_label})")
+    elif change >= yellow_thresh:
+        return _result("iv_trend", "YELLOW", 1, 2, f"{change:+.2f} — mild expansion ({scale_label})")
+    else:
+        return _result("iv_trend", "RED", 0, 2, f"{change:+.2f} — IV contracting ({scale_label})")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

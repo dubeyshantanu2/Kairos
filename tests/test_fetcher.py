@@ -132,7 +132,7 @@ async def test_fetcher_extra_endpoints():
     
     await fetcher.test_connectivity()
     
-    candle = await fetcher.get_latest_candle("NIFTY", cumulative_volume=0, cumulative_vwap_num=0.0)
+    candle = await fetcher.get_latest_candle("NIFTY")
     assert candle.close == 22050.0
     
     levels = await fetcher.get_previous_day_levels("NIFTY")
