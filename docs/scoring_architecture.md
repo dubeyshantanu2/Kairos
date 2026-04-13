@@ -14,13 +14,14 @@ Based on the current score and specifically the state of the Implied Volatility 
 
 ## 1. Mathematical Condition Breakdown
 
-### Condition 1: Implied Volatility (IV) Change Rate
+### Condition 1: Implied Volatility (IV) Change Rate (DTE-Scaled)
 **Weight:** 2 Points | **Time Parameter:** 15-Minute Lookback
-**Logic:** A measure of whether the At-The-Money (ATM) option premium is expanding (inflating) or contracting (deflating) over the last 15 minutes.
-* **Data Source:** Rolling 20-candle IV In-Memory Buffer. Compares the current IV (`iv_buffer[-1]`) against the IV from 15 minutes ago (`iv_buffer[-15]`).
-* **🟢 Green (2 Pts):** Expansion > +1.5. Premium is inflating.
-* **🟡 Yellow (1 Pt):** Expansion between 0.0 and 1.5. Steady premium.
-* **🔴 Red (0 Pts):** Contraction < 0.0. Premium is dying. *Triggers the IV Cap (see final section).*
+**Logic:** Measures whether ATM Implied Volatility (IV) is expanding (inflating) or contracting (deflating). Thresholds are dynamic based on Days To Expiry (DTE) per ADR-011.
+* **Data Source:** Rolling 20-candle IV In-Memory Buffer. Compares `iv_buffer[-1]` against `iv_buffer[-15]`.
+* **DTE >= 3 (Early Week):** 🟢 > +0.50 | 🟡 > 0.00 | 🔴 Below 0.00
+* **DTE = 2 (Mid-Week):** 🟢 > +0.30 | 🟡 > -0.20 | 🔴 Below -0.20
+* **DTE <= 1 (Expiry):** 🟢 > +0.20 | 🟡 > -0.50 | 🔴 Below -0.50
+* **🔴 Red Status:** Triggers the **IV Cap** override to protect against theta-crush.
 * **Warmup:** Returns CAUTION (1 point) until 15 minutes of uninterrupted data have elapsed.
 
 ### Condition 2: Underlying Momentum & Consistency
@@ -36,12 +37,23 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🔴 Red (0 Pts):** Range < 0.15% **OR** Trend <= 2/5 candles (heavy chop).
 
 ### Condition 3: At-The-Money (ATM) Open Interest Flow
-**Weight:** 1 Point | **Time Parameter:** Instantaneous (Cycle-by-Cycle Delta)
-**Logic:** Uses immediate Option Chain OI Changes to gauge institutional conviction.
-* **Data Source:** Live ATM CE & PE Option Rows.
-* **🟢 Green (1 Pt):** Strong conviction. e.g. CE writing (adding OI) + PE unwinding (removing OI) = Bearish Conviction.
-* **🟡 Yellow (0.5 Pts):** Mild bias. Only one side showing significant change.
-* **🔴 Red (0 Pts):** Both adding heavily (straddle writing/rangebound) or both unwinding heavily (uncertainty).
+**Weight:** 1 Point | **Time Parameter:** 5-Minute Rolling Window (ADR-010)
+**Logic:** Gauges institutional conviction by tracking ATM CE/PE building or unwinding, while classifying the broader market trend phase.
+* **Data Source:** Live ATM CE & PE Option Rows. Deltas are calculated over a 5-minute rolling window to filter out single-cycle noise.
+* **Conviction Scoring:**
+  - **🟢 Green (1 Pt):** Unified conviction. CE Building + PE Unwinding (Bearish) OR PE Building + CE Unwinding (Bullish).
+  - **🟡 Yellow (0 Pts):** Mild bias. Only one side showing significant movement.
+  - **🔴 Red (0 Pts):** Mixed signals. Both sides building (Straddle writing) or both unwinding (Uncertainty).
+
+#### Market Trend Phases (ADR-014)
+The engine correlates Price Δ with total ATM OI Δ (CE+PE) over the lookback period to output one of 5 phases in the alert detail:
+| Phase | Logic | Interpretation |
+|---|---|---|
+| **Long Buildup 🟢** | Price ↑, OI ↑ | Fresh buying; aggressive bullishness. |
+| **Short Covering 🔵**| Price ↑, OI ↓ | Sellers exiting; technical rally. |
+| **Short Buildup 🔴** | Price ↓, OI ↑ | Fresh selling; aggressive bearishness. |
+| **Long Unwinding 🟠**| Price ↓, OI ↓ | Buyers liquidating; profit booking. |
+| **Neutral 🟡** | OI Δ < 5000 | Consolidation or low participation phase. |
 
 ### Condition 4: Averaged Gamma/Theta Ratio (DTE-Scaled)
 **Weight:** 1 Point | **Time Parameter:** Days To Expiry (DTE)
@@ -50,16 +62,16 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **Unit Normalization:** Dhan returns `theta` as an absolute ₹-per-day decay (e.g. `-29.3`), while `gamma` is expressed per point² (e.g. `0.00047`). These are on incompatible scales. Before computing the ratio, `theta` is normalized by the current spot price: `theta_normalized = theta / spot_price`. This converts theta to a per-point basis, matching gamma's scale.
 * **Ratio:** `gamma / theta_normalized` (rounded to 6 decimal places).
 * **Cold-Start Guard:** If `gamma == 0` (session open artifact), returns **YELLOW** status ("data not yet populated") instead of a false-negative RED.
-* **DTE >= 3 (Lenient):** 🟢 Ratio > 0.000080 | 🟡 > 0.000040 | 🔴 Below
-* **DTE = 2 (Standard):** 🟢 Ratio > 0.000120 | 🟡 > 0.000060 | 🔴 Below
-* **DTE = 1 (Expiry - Strict):** 🟢 Ratio > 0.000200 | 🟡 > 0.000080 | 🔴 Below
+* **DTE >= 3 (Lenient):** 🟢 Ratio > 0.000080 | 🟡 (0 Pts) > 0.000040 | 🔴 Below
+* **DTE = 2 (Standard):** 🟢 Ratio > 0.000120 | 🟡 (0 Pts) > 0.000060 | 🔴 Below
+* **DTE = 1 (Expiry - Strict):** 🟢 Ratio > 0.000200 | 🟡 (0 Pts) > 0.000080 | 🔴 Below
 
 ### Condition 5: Previous Day High/Low (PDHL) Breakout
 **Weight:** 1 Point | **Time Parameter:** Previous Day Daily Candles
 **Logic:** Momentum traders seek expansion beyond yesterday's value area to confirm trend participation.
 * **Data Source:** PDH/PDL fetched via `/charts/historical`. The engine automatically detects the last fully completed trading day (ignoring today's partial candle if present in the response).
 * **🟢 Green (1 Pt):** Price cleanly broke above PDH or below PDL.
-* **🟡 Yellow (0.5 Pts):** Price is within 0.10% of either level (testing resistance/support).
+* **🟡 Yellow (0 Pts):** Price is within 0.10% of either level (testing resistance/support).
 * **🔴 Red (0 Pts):** Trapped cleanly inside yesterday's range.
 
 ### Condition 6: Realized Move vs Implied Straddle Ratio
@@ -70,7 +82,7 @@ Based on the current score and specifically the state of the Implied Volatility 
   2. *Realized Move:* `(Max High - Min Low)` over the last 15 minutes.
 * **Ratio:** `Realized Move % / Scaled Implied Move %`
 * **🟢 Green (1 Pt):** Ratio > 1.0 (Delivering greater volatile range than priced).
-* **🟡 Yellow (0.5 Pts):** Ratio 0.7 - 1.0 (Fair pricing).
+* **🟡 Yellow (0 Pts):** Ratio 0.7 - 1.0 (Fair pricing).
 * **🔴 Red (0 Pts):** Ratio < 0.7 (Premium is entirely overvalued, theta sink).
 * **Warmup:** Returns CAUTION until 15 minutes of uninterrupted data have elapsed.
 
@@ -79,7 +91,7 @@ Based on the current score and specifically the state of the Implied Volatility 
 **Logic:** Moving too far from the session VWAP (Volume Weighted Average Price) implies technical over-extension and increases the probability of mean-reversion, discouraging fresh continuation entries.
 * **Data Source:** Latest incrementally calculated VWAP since 09:15 session start. Distance = `abs(Spot - VWAP) / VWAP * 100`.
 * **🟢 Green (1 Pt):** Distance < 0.20%. Trending close to average value area. Room to run.
-* **🟡 Yellow (0.5 Pts):** Distance 0.20% - 0.40%. Mildly extended.
+* **🟡 Yellow (0 Pts):** Distance 0.20% - 0.40%. Mildly extended.
 * **🔴 Red (0 Pts):** Distance > 0.40%. Too extended. High risk of exhaustion.
 
 ---

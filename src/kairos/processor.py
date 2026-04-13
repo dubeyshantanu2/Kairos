@@ -160,32 +160,61 @@ def score_momentum(candle_buffer: deque) -> ConditionResult:
 # Condition 3 — OI Flow at ATM (max 1 point)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_oi_flow(atm: ATMStrikes) -> ConditionResult:
+def score_oi_flow(atm: ATMStrikes, candle_buffer: deque) -> ConditionResult:
     """
     Checks whether smart money is establishing a directional bias at the ATM strike.
     
     Evaluates instantaneous Open Interest (OI) deltas compared to the previous cycle.
     CE building + PE unwinding = strongly Bearish. PE building + CE unwinding = strongly Bullish.
     
+    Also determines the market Trend Phase (Long Buildup, Short Covering, etc.)
+    by comparing underlying price action vs total ATM OI flow over the lookback window.
+    
     :param atm: A consolidated ATMStrikes object containing the ATM CE and PE rows.
     :type atm: ATMStrikes
+    :param candle_buffer: Full rolling deque to calculate the delta price.
+    :type candle_buffer: collections.deque
     :return: Extracted conviction result. Returns GREEN for unified direction, RED for straddle writes. (Max: 1)
     :rtype: ConditionResult
     """
+    lookback = settings.oi_lookback_cycles
+    if len(candle_buffer) < lookback:
+        return _caution("oi_flow", 1, f"Warming up — {lookback} candles needed for trend phase")
+
     ce_change = atm.ce.oi_change
     pe_change = atm.pe.oi_change
 
+    # ── Conviction Logic ───────────────────────────────────────────────────
     ce_building = ce_change > 0
     pe_building = pe_change > 0
     ce_unwinding = ce_change < 0
     pe_unwinding = pe_change < 0
 
-    detail = f"CE OI Δ{ce_change:+d} | PE OI Δ{pe_change:+d}"
+    # ── Trend Phase Logic ──────────────────────────────────────────────────
+    old_close = list(candle_buffer)[-lookback].close
+    price_change = atm.spot_price - old_close
+    total_oi_change = ce_change + pe_change
+    oi_thresh = settings.trend_phase_oi_threshold
 
+    phase = "Neutral 🟡"
+    if price_change > 0:
+        if total_oi_change > oi_thresh:
+            phase = "Long Buildup 🟢"
+        elif total_oi_change < -oi_thresh:
+            phase = "Short Covering 🔵"
+    elif price_change < 0:
+        if total_oi_change > oi_thresh:
+            phase = "Short Buildup 🔴"
+        elif total_oi_change < -oi_thresh:
+            phase = "Long Unwinding 🟠"
+
+    detail = f"{phase} | CE OI Δ{ce_change:+d} | PE OI Δ{pe_change:+d}"
+
+    # ── Scoring ────────────────────────────────────────────────────────────
     if ce_building and pe_unwinding:
-        return _result("oi_flow", "GREEN", 1, 1, f"Bullish — {detail}")
-    elif pe_building and ce_unwinding:
         return _result("oi_flow", "GREEN", 1, 1, f"Bearish — {detail}")
+    elif pe_building and ce_unwinding:
+        return _result("oi_flow", "GREEN", 1, 1, f"Bullish — {detail}")
     elif ce_building and pe_building:
         return _result("oi_flow", "RED", 0, 1, f"Confused — both building | {detail}")
     elif ce_unwinding and pe_unwinding:

@@ -6,6 +6,22 @@ It does **not** generate trade signals. Instead, it acts as a live weather repor
 
 ---
 
+## 📈 Market Trend Phases
+
+Kairos implements a 5-phase trend classification system that correlates relative price change with At-The-Money (ATM) Open Interest flow over a 5-minute rolling window. This provides deeper context beyond just "Bullish" or "Bearish" conviction.
+
+| Phase | Price Δ | OI Δ | Interpretation |
+|---|---|---|---|
+| **Long Buildup 🟢** | Positive | Positive | Fresh buying; strong bullish conviction. |
+| **Short Covering 🔵** | Positive | Negative | Sellers exiting; technical rally/bounce. |
+| **Short Buildup 🔴** | Negative | Positive | Fresh selling; strong bearish conviction. |
+| **Long Unwinding 🟠**| Negative | Negative | Buyers exiting; profit booking or capitulation. |
+| **Neutral 🟡** | Varied | < Threshold | Consolidation or low participation. |
+
+*Note: The default threshold is set to 5,000 ATM OI (CE+PE) as defined in `config.py`.*
+
+---
+
 ## 🏗 System Architecture
 
 The trading environment is entirely orchestrated through Discord via the Discord orchestrator bot. The Python Engine (this repository) runs headlessly on a VPS and communicates exclusively through an asynchronous **Supabase Shared State Bridge**.

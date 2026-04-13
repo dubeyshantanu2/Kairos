@@ -61,23 +61,71 @@ def test_score_momentum_red_choppy(make_candle):
     assert res.status == "RED"
     assert res.points == 0
 
-def test_score_oi_flow_bullish(make_atm):
-    atm = make_atm(22000, ce_oi_change=1000, pe_oi_change=-500)
-    res = score_oi_flow(atm)
+def test_score_oi_flow_conviction_only(make_atm, make_candle):
+    """Verifies that directional conviction (Bearish/Bullish) works independent of Trend Phase."""
+    # Bearish Conviction: CE Building, PE Unwinding
+    # Trend Phase: Long Buildup (Price UP, Total OI UP)
+    atm = make_atm(22010, ce_oi_change=10000, pe_oi_change=-500)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    res = score_oi_flow(atm, buf)
+    assert res.status == "GREEN" # Strong conviction
+    assert "Bearish" in res.detail
+    assert "Long Buildup 🟢" in res.detail
+
+    # Bullish Conviction: PE Building, CE Unwinding
+    # Trend Phase: Short Buildup (Price DOWN, Total OI UP)
+    atm = make_atm(21990, ce_oi_change=-1000, pe_oi_change=10000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    res = score_oi_flow(atm, buf)
     assert res.status == "GREEN"
     assert "Bullish" in res.detail
+    assert "Short Buildup 🔴" in res.detail
 
-def test_score_oi_flow_bearish(make_atm):
-    atm = make_atm(22000, ce_oi_change=-1000, pe_oi_change=500)
-    res = score_oi_flow(atm)
-    assert res.status == "GREEN"
-    assert "Bearish" in res.detail
+def test_score_oi_flow_trend_phases(make_atm, make_candle):
+    """Exhaustive check for the 4 active trend phases."""
+    # 1. Long Buildup: Price UP, Total OI UP (> 5000)
+    atm = make_atm(22010, ce_oi_change=4000, pe_oi_change=2000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Long Buildup 🟢" in score_oi_flow(atm, buf).detail
 
-def test_score_oi_flow_neutral(make_atm):
+    # 2. Short Covering: Price UP, Total OI DOWN (< -5000)
+    atm = make_atm(22010, ce_oi_change=-4000, pe_oi_change=-2000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Short Covering 🔵" in score_oi_flow(atm, buf).detail
+
+    # 3. Short Buildup: Price DOWN, Total OI UP (> 5000)
+    atm = make_atm(21990, ce_oi_change=3000, pe_oi_change=3000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Short Buildup 🔴" in score_oi_flow(atm, buf).detail
+
+    # 4. Long Unwinding: Price DOWN, Total OI DOWN (< -5000)
+    atm = make_atm(21990, ce_oi_change=-3000, pe_oi_change=-3000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Long Unwinding 🟠" in score_oi_flow(atm, buf).detail
+
+def test_score_oi_flow_neutral_scenarios(make_atm, make_candle):
+    """Verifies Neutral phase when thresholds are not met or price is flat."""
+    # Below threshold: Total OI change = 4000 (< 5000)
+    atm = make_atm(22010, ce_oi_change=2000, pe_oi_change=2000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Neutral 🟡" in score_oi_flow(atm, buf).detail
+
+    # Exactly at threshold: Should stay Neutral (logic uses > and <, not >= and <=)
+    atm = make_atm(22010, ce_oi_change=5000, pe_oi_change=0)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Neutral 🟡" in score_oi_flow(atm, buf).detail
+
+    # Flat price: phase remains Neutral regardless of OI
+    atm = make_atm(22000, ce_oi_change=10000, pe_oi_change=10000)
+    buf = deque([make_candle(22000)] * 5, maxlen=15)
+    assert "Neutral 🟡" in score_oi_flow(atm, buf).detail
+
+def test_score_oi_flow_warmup(make_atm, make_candle):
     atm = make_atm(22000, ce_oi_change=1000, pe_oi_change=1000)
-    res = score_oi_flow(atm)
-    assert res.status == "RED"
-    assert res.points == 0
+    buf = deque([make_candle(22000)] * 2, maxlen=15) # Only 2 candles, need 5
+    res = score_oi_flow(atm, buf)
+    assert res.status == "YELLOW"
+    assert "Warming up" in res.detail
 
 def test_score_gamma_theta_dte3(make_atm):
     # Realistic Dhan-scale Greeks: 

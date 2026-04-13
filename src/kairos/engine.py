@@ -169,7 +169,7 @@ def evaluate(
     # ── Run all 7 conditions ─────────────────────────────────────────────
     c1_iv = score_iv_change(iv_buffer, dte)
     c2_mom = score_momentum(candle_buffer)
-    c3_oi = score_oi_flow(atm)
+    c3_oi = score_oi_flow(atm, candle_buffer)
     c4_gt = score_gamma_theta(atm, dte)
     c5_pdhl = score_pdhl_breakout(spot_price, prev_levels)
     c6_move = score_move_ratio(atm, candle_buffer, dte)
