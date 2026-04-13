@@ -290,6 +290,27 @@ class Notifier:
             content = f"ℹ️ **SESSION ENDED** — {session_name}\nEngine idle until next session | {time_str}"
         await self._post(settings.discord_health_webhook_url, {"content": content})
 
+    async def post_lunch_break(self) -> None:
+        """Post lunch break alert to BOTH channels — no trading during this window."""
+        time_str = datetime.now(IST).strftime("%H:%M IST")
+        s1_end = settings.session_1_end
+        s2_start = settings.session_2_start
+        resume_str = f"{s2_start[0]:02d}:{s2_start[1]:02d}"
+
+        content = "\n".join([
+            "⏸️ **LUNCH BREAK — NO TRADING**",
+            "─" * 34,
+            f"Session 1 ended at {s1_end[0]:02d}:{s1_end[1]:02d} IST",
+            f"Session 2 resumes at {resume_str} IST",
+            "",
+            "Engine is idle. **Do NOT trade during this window.**",
+            "Signals will resume automatically at next session.",
+            f"🕐 {time_str}",
+        ])
+        # Post to both channels so trader sees it everywhere
+        await self._post(settings.discord_webhook_url, {"content": content})
+        await self._post(settings.discord_health_webhook_url, {"content": content})
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers

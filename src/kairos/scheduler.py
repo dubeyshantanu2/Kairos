@@ -60,6 +60,7 @@ class SessionState:
         # Session boundary tracking
         self.in_session: bool = False
         self.warmup_complete: bool = False
+        self.lunch_break_alert_sent: bool = False
         self.startup_done: bool = False
 
         # API health
@@ -121,6 +122,13 @@ def is_active_session() -> bool:
     in_s2 = s2_start <= current <= s2_end
 
     return in_s1 or in_s2
+
+
+def is_lunch_break() -> bool:
+    """Returns True if current IST time falls in the gap between session 1 and session 2."""
+    now = datetime.now(IST)
+    current = (now.hour, now.minute)
+    return settings.session_1_end < current < settings.session_2_start
 
 
 def get_session_name() -> str:
@@ -260,6 +268,15 @@ async def run_cycle() -> None:
         if state.in_session:
             state.in_session = False
             await notifier.post_session_boundary(entering=False, session_name="session")
+
+        # Fire lunch break alert once when we enter the gap between sessions
+        if is_lunch_break() and not state.lunch_break_alert_sent:
+            state.lunch_break_alert_sent = True
+            await notifier.post_lunch_break()
+        elif not is_lunch_break():
+            # Reset the flag outside lunch break so it can fire again next day
+            state.lunch_break_alert_sent = False
+
         return
 
     if not state.in_session:

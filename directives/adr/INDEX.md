@@ -15,6 +15,7 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-010 | Cycle-Level OI Delta Calculation | 2026-03-25 | Active |
 | ADR-011 | Move Ratio Time-Horizon Scaling | 2026-03-25 | Active |
 | ADR-012 | Anti-Flap Hysteresis for IV Cap | 2026-03-25 | Active |
+| ADR-013 | Lunch Break No-Trading Alert | 2026-04-13 | Active |
 
 
 

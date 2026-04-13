@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Lunch Break No-Trading Alert (`scheduler.py`, `notifier.py`):**
+  - New Discord alert fires once when the engine enters the dead zone between session 1 (ends 11:45 IST) and session 2 (starts 13:00 IST).
+  - Posts to both `#environment` and `#system-check` channels, explicitly warning the trader not to act on stale signals during the 75-minute gap.
+  - Uses a one-shot flag (`lunch_break_alert_sent`) to prevent duplicate messages; resets automatically each day.
+  - Added `is_lunch_break()` helper to `scheduler.py` for clean time-window detection.
+  - Documented in `directives/adr/ADR-013_lunch_break_alert.md`.
+
 ### Fixed
 - **IV Flickering — Anti-Flap Hysteresis (`scheduler.py`, `config.py`):**
   - Root cause: Tiny fluctuations in IV change around zero caused the IV cap to toggle on/off every minute, resulting in an alternating `AVOID`→`CAUTION` status loop.
