@@ -121,6 +121,22 @@ class ATMStrikes(BaseModel):
     spot_price: float
 
 
+class StrikeCluster(BaseModel):
+    """
+    ATM + wings (±7 strikes) for the current snapshot.
+    Used for multi-strike OI Flow and Trend Phase detection.
+    """
+    model_config = ConfigDict(frozen=False)
+
+    atm_strike: int
+    spot_price: float
+    ce_cluster: list[OptionChainRow]
+    pe_cluster: list[OptionChainRow]
+    
+    total_ce_oi_change: int = 0
+    total_pe_oi_change: int = 0
+
+
 class ConditionResult(BaseModel):
     """
     Result of one scored condition.
@@ -159,6 +175,8 @@ class EnvironmentScore(BaseModel):
     max_score: int = 8
     status: str                           # "GO", "CAUTION", "AVOID"
     iv_capped: bool = False               # True if IV contraction cap was applied
+    total_ce_oi_change: int = 0           # Aggregate CE OI change across cluster
+    total_pe_oi_change: int = 0           # Aggregate PE OI change across cluster
     conditions: list[ConditionResult]     # all 7 condition results
     summary_raw: str                      # Python-generated template string
     summary: str = ""                     # Gemini-polished (filled by Discord Orchestrator)

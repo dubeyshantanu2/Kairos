@@ -99,6 +99,7 @@ async def test_run_cycle(mock_dependencies, dummy_session, dummy_candle, dummy_l
     sched.state.reset_buffers()
     sched.state.startup_done = True  # manually skip startup in basic cycle
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     
@@ -232,21 +233,22 @@ async def test_run_cycle_api_error(mock_dependencies, dummy_session, mocker):
     assert sched.state.consecutive_failures == 1
 
 @pytest.mark.asyncio
-async def test_run_cycle_suppressed_caution(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+async def test_run_cycle_alert_on_caution(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Transition to CAUTION should trigger Discord alert per ADR-015."""
     import kairos.scheduler as sched
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     sched.state.previous_status = "AVOID"  # Start at AVOID
     
-    # Change to CAUTION (should be suppressed)
+    # Change to CAUTION (previously suppressed, now alerts)
     caution_score = dummy_score.model_copy()
     caution_score.status = "CAUTION"
-    caution_score.previous_status = "AVOID" # Triggers state_changed property
+    caution_score.previous_status = "AVOID"
 
-    
     sched.db.get_active_session = AsyncMock(return_value=dummy_session)
     sched.fetcher.get_option_chain = AsyncMock(return_value=[])
     sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
@@ -257,8 +259,8 @@ async def test_run_cycle_suppressed_caution(mock_dependencies, dummy_session, du
     
     await sched.run_cycle()
     
-    # Verify alert was NOT called for CAUTION
-    sched.notifier.post_environment_alert.assert_not_called()
+    # Verify alert WAS called for CAUTION per ADR-015
+    sched.notifier.post_environment_alert.assert_called_once()
     assert sched.state.previous_status == "CAUTION"
 
 @pytest.mark.asyncio
@@ -268,6 +270,7 @@ async def test_run_cycle_signal_start(mock_dependencies, dummy_session, dummy_ca
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     sched.state.previous_status = "AVOID"  # Start at AVOID
@@ -297,6 +300,7 @@ async def test_run_cycle_signal_end(mock_dependencies, dummy_session, dummy_cand
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     sched.state.previous_status = "GO"  # Start at GO
@@ -321,11 +325,12 @@ async def test_run_cycle_signal_end(mock_dependencies, dummy_session, dummy_cand
 
 @pytest.mark.asyncio
 async def test_run_cycle_first_alert_and_subsequent_suppression(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
-    """Verify first cycle alerts (proof of life) and subsequent suppression for same status."""
+    """Verify first cycle alerts and subsequent suppression ONLY if absolutely nothing changes."""
     import kairos.scheduler as sched
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     
@@ -338,20 +343,120 @@ async def test_run_cycle_first_alert_and_subsequent_suppression(mock_dependencie
     # 1. First cycle (AVOID) -> Should alert
     first_score = dummy_score.model_copy()
     first_score.status = "AVOID"
-    first_score.previous_status = "GO"
-    
+    first_score.previous_status = None
+    first_score.conditions = []
+
     mocker.patch("kairos.scheduler.is_active_session", return_value=True)
     mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
 
-    evaluate_mock = mocker.patch("kairos.scheduler.evaluate", return_value=first_score)
+    # Use a side effect to update previous_status correctly for subsequent calls
+    def evaluate_mock(**kwargs):
+        res = first_score.model_copy()
+        res.previous_status = kwargs.get("previous_status")
+        return res
+
+    mocker.patch("kairos.scheduler.evaluate", side_effect=evaluate_mock)
     
     await sched.run_cycle()
     sched.notifier.post_environment_alert.assert_called_once()
     sched.notifier.post_environment_alert.reset_mock()
     
-    # 2. Second cycle (Same status AVOID) -> Should NOT alert
+    # 2. Second cycle (Same status, same conditions) -> Should NOT alert
     await sched.run_cycle()
     sched.notifier.post_environment_alert.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_run_cycle_suppress_digit_jitter(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify that a small digit change in detail (jitter) does NOT trigger an alert per ADR-017."""
+    import kairos.scheduler as sched
+    from kairos.models import ConditionResult
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.warmup_complete = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    
+    # Initial cycle
+    c1 = ConditionResult(name="mom", status="GREEN", points=1, max_points=1, detail="0.35% range")
+    score1 = dummy_score.model_copy()
+    score1.status = "GO"
+    score1.previous_status = "GO"
+    score1.conditions = [c1]
+
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=score1)
+    
+    # Cycle 1: Proof of life alert
+    await sched.run_cycle()
+    sched.notifier.post_environment_alert.assert_called_once()
+    sched.notifier.post_environment_alert.reset_mock()
+    
+    # Cycle 2: Detail changes (0.35% -> 0.36%) but status and name same.
+    # ADR-017 should suppress this jitter.
+    c2 = ConditionResult(name="mom", status="GREEN", points=1, max_points=1, detail="0.36% range")
+    score2 = dummy_score.model_copy()
+    score2.status = "GO"
+    score2.previous_status = "GO"
+    score2.conditions = [c2]
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=score2)
+    
+    await sched.run_cycle()
+    
+    # Verify alert was NOT called for digit jitter
+    sched.notifier.post_environment_alert.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_run_cycle_alert_on_oi_phase_change(mock_dependencies, dummy_session, dummy_candle, dummy_levels, dummy_score, mocker):
+    """Verify that a change in OI Trend Phase triggers an alert per ADR-017."""
+    import kairos.scheduler as sched
+    from kairos.models import ConditionResult
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.warmup_complete = True
+    sched.state.prev_levels = dummy_levels
+    sched.state.active_config = dummy_session
+    
+    # Initial cycle: Neutral phase
+    c1 = ConditionResult(name="oi_flow", status="RED", points=0, max_points=1, detail="Neutral | CE Δ+1000 | PE Δ+1000")
+    score1 = dummy_score.model_copy()
+    score1.status = "CAUTION"
+    score1.previous_status = "CAUTION"
+    score1.conditions = [c1]
+
+    sched.db.get_active_session = AsyncMock(return_value=dummy_session)
+    sched.fetcher.get_option_chain = AsyncMock(return_value=[])
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle)
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_environment_alert = AsyncMock()
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=score1)
+    
+    # Cycle 1
+    await sched.run_cycle()
+    sched.notifier.post_environment_alert.assert_called_once()
+    sched.notifier.post_environment_alert.reset_mock()
+    
+    # Cycle 2: Phase changes (Neutral -> Short Buildup)
+    c2 = ConditionResult(name="oi_flow", status="GREEN", points=1, max_points=1, detail="Bearish — Short Buildup | CE Δ+20000 | PE Δ+1000")
+    score2 = dummy_score.model_copy()
+    score2.status = "CAUTION"
+    score2.previous_status = "CAUTION"
+    score2.conditions = [c2]
+    
+    mocker.patch("kairos.scheduler.evaluate", return_value=score2)
+    
+    await sched.run_cycle()
+    
+    # Verify alert WAS called for Phase change
+    sched.notifier.post_environment_alert.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -375,9 +480,11 @@ async def test_run_cycle_session_transition_resets_state(mock_dependencies, dumm
     sched.notifier.post_api_warning = AsyncMock()
     sched.notifier.post_environment_alert = AsyncMock()
     sched.notifier.post_session_boundary = AsyncMock()
+    sched.notifier.post_warmup_complete = AsyncMock()
 
     mocker.patch("kairos.scheduler.is_active_session", return_value=True)
     mocker.patch("kairos.scheduler.is_lunch_break", return_value=False)
+    mocker.patch("kairos.scheduler.state.check_warmup_complete", return_value=True)
 
     def evaluate_side_effect(**kwargs):
         res = dummy_score.model_copy()
@@ -402,6 +509,7 @@ async def test_iv_cap_hysteresis_holds(mock_dependencies, dummy_session, dummy_c
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     sched.state.iv_cap_active = True  # cap was already triggered last cycle
@@ -437,6 +545,7 @@ async def test_iv_cap_hysteresis_releases(mock_dependencies, dummy_session, dumm
     sched.state.reset_buffers()
     sched.state.startup_done = True
     sched.state.in_session = True
+    sched.state.warmup_complete = True
     sched.state.prev_levels = dummy_levels
     sched.state.active_config = dummy_session
     sched.state.iv_cap_active = True  # cap was already triggered last cycle

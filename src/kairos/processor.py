@@ -9,7 +9,13 @@ import math
 from typing import Optional
 
 from kairos.config import settings
-from kairos.models import ATMStrikes, ConditionResult, OHLCVCandle, PreviousDayLevels
+from kairos.models import (
+    ATMStrikes,
+    ConditionResult,
+    OHLCVCandle,
+    PreviousDayLevels,
+    StrikeCluster,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,18 +166,20 @@ def score_momentum(candle_buffer: deque) -> ConditionResult:
 # Condition 3 — OI Flow at ATM (max 1 point)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_oi_flow(atm: ATMStrikes, candle_buffer: deque) -> ConditionResult:
+def score_oi_flow(cluster: StrikeCluster, candle_buffer: deque) -> ConditionResult:
     """
-    Checks whether smart money is establishing a directional bias at the ATM strike.
+    Checks whether smart money is establishing a directional bias across the ATM cluster.
     
-    Evaluates instantaneous Open Interest (OI) deltas compared to the previous cycle.
+    Evaluates Distance-Weighted Mean Open Interest (OI) deltas across ±7 strikes from ATM.
+    ATM strikes carry 1.0 weight, while wing strikes (±7) carry 0.125 weight.
     CE building + PE unwinding = strongly Bearish. PE building + CE unwinding = strongly Bullish.
     
-    Also determines the market Trend Phase (Long Buildup, Short Covering, etc.)
-    by comparing underlying price action vs total ATM OI flow over the lookback window.
+    Determines the market Trend Phase (Long Buildup, Short Covering, etc.)
+    by comparing underlying price action vs the WEIGHTED MEAN cluster OI flow.
+
     
-    :param atm: A consolidated ATMStrikes object containing the ATM CE and PE rows.
-    :type atm: ATMStrikes
+    :param cluster: A consolidated StrikeCluster object containing ATM ±7 CE and PE rows.
+    :type cluster: StrikeCluster
     :param candle_buffer: Full rolling deque to calculate the delta price.
     :type candle_buffer: collections.deque
     :return: Extracted conviction result. Returns GREEN for unified direction, RED for straddle writes. (Max: 1)
@@ -181,8 +189,8 @@ def score_oi_flow(atm: ATMStrikes, candle_buffer: deque) -> ConditionResult:
     if len(candle_buffer) < lookback:
         return _caution("oi_flow", 1, f"Warming up — {lookback} candles needed for trend phase")
 
-    ce_change = atm.ce.oi_change
-    pe_change = atm.pe.oi_change
+    ce_change = cluster.total_ce_oi_change
+    pe_change = cluster.total_pe_oi_change
 
     # ── Conviction Logic ───────────────────────────────────────────────────
     ce_building = ce_change > 0
@@ -192,7 +200,7 @@ def score_oi_flow(atm: ATMStrikes, candle_buffer: deque) -> ConditionResult:
 
     # ── Trend Phase Logic ──────────────────────────────────────────────────
     old_close = list(candle_buffer)[-lookback].close
-    price_change = atm.spot_price - old_close
+    price_change = cluster.spot_price - old_close
     total_oi_change = ce_change + pe_change
     oi_thresh = settings.trend_phase_oi_threshold
 
@@ -208,20 +216,34 @@ def score_oi_flow(atm: ATMStrikes, candle_buffer: deque) -> ConditionResult:
         elif total_oi_change < -oi_thresh:
             phase = "Long Unwinding 🟠"
 
-    detail = f"{phase} | CE OI Δ{ce_change:+d} | PE OI Δ{pe_change:+d}"
+    # ── Scoring & Mapping (ADR-016) ────────────────────────────────────────
+    # Long/Short Buildup = GREEN (1 pt)
+    # Short Covering / Long Unwinding = RED (0 pt) - User wants to avoid pullbacks
+    # Neutral = RED (0 pt)
 
-    # ── Scoring ────────────────────────────────────────────────────────────
-    if ce_building and pe_unwinding:
-        return _result("oi_flow", "GREEN", 1, 1, f"Bearish — {detail}")
-    elif pe_building and ce_unwinding:
-        return _result("oi_flow", "GREEN", 1, 1, f"Bullish — {detail}")
-    elif ce_building and pe_building:
-        return _result("oi_flow", "RED", 0, 1, f"Confused — both building | {detail}")
-    elif ce_unwinding and pe_unwinding:
-        return _result("oi_flow", "RED", 0, 1, f"No conviction — both unwinding | {detail}")
+    if phase == "Long Buildup 🟢":
+        status, points = "GREEN", 1
+        label = "Bullish — Long Buildup"
+    elif phase == "Short Buildup 🔴":
+        status, points = "GREEN", 1
+        label = "Bearish — Short Buildup"
+    elif phase == "Short Covering 🔵":
+        status, points = "RED", 0
+        label = "Bullish (Pullback) — Short Covering"
+    elif phase == "Long Unwinding 🟠":
+        status, points = "RED", 0
+        label = "Bearish (Pullback) — Long Unwinding"
     else:
-        # One side flat, one side moving — mild bias
-        return _result("oi_flow", "YELLOW", 0, 1, f"Mild bias — {detail}")
+        status, points = "RED", 0
+        # Check for heavy straddle writing in neutral market
+        if ce_change > (oi_thresh // 2) and pe_change > (oi_thresh // 2):
+            label = "Neutral — Straddle Writing"
+        else:
+            label = "Neutral"
+
+    detail = f"{label} | CE Δ{ce_change:+d} | PE Δ{pe_change:+d}"
+    return _result("oi_flow", status, points, 1, detail)
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

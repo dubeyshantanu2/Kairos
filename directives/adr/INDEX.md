@@ -17,6 +17,9 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-012 | Anti-Flap Hysteresis for IV Cap | 2026-03-25 | Active |
 | ADR-013 | Lunch Break No-Trading Alert | 2026-04-13 | Active |
 | ADR-014 | Market Trend Phases Classification | 2026-04-13 | Active |
+| ADR-015 | Granular Condition & Status Alerting | 2026-04-15 | Active |
+| ADR-016 | Trend Phase-Driven OI Flow Scoring | 2026-04-15 | Active |
+| ADR-017 | Sustained OI Window & Noise Reduction | 2026-04-15 | Active |
 
 
 

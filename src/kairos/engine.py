@@ -14,8 +14,10 @@ from kairos.models import (
     ConditionResult,
     EnvironmentScore,
     OHLCVCandle,
+    OptionChainRow,
     PreviousDayLevels,
     SessionConfig,
+    StrikeCluster,
 )
 from kairos.processor import (
     score_gamma_theta,
@@ -31,7 +33,7 @@ IST = ZoneInfo("Asia/Kolkata")
 
 
 def find_atm(
-    option_chain: list,
+    option_chain: list[OptionChainRow],
     spot_price: float,
     strike_interval: int,
 ) -> ATMStrikes:
@@ -72,6 +74,71 @@ def find_atm(
         pe=pe_row,
         spot_price=spot_price,
     )
+
+
+def build_strike_cluster(
+    option_chain: list[OptionChainRow],
+    atm_strike: int,
+    count: int,
+    spot_price: float,
+) -> StrikeCluster:
+    """
+    Extracts high-conviction cluster (ATM ± count strikes).
+    Dhan returns a full chain; we find the ATM index and slice.
+    """
+    # 1. Get unique sorted strikes
+    strikes = sorted(list(set(r.strike for r in option_chain)))
+    
+    try:
+        atm_idx = strikes.index(atm_strike)
+    except ValueError:
+        # Fallback if exact ATM strike missing
+        atm_idx = min(range(len(strikes)), key=lambda i: abs(strikes[i] - atm_strike))
+    
+    start_idx = max(0, atm_idx - count)
+    end_idx = min(len(strikes), atm_idx + count + 1)
+    
+    target_strikes = strikes[start_idx:end_idx]
+    
+    ce_cluster = [r for r in option_chain if r.strike in target_strikes and r.option_type == "CE"]
+    pe_cluster = [r for r in option_chain if r.strike in target_strikes and r.option_type == "PE"]
+    
+    # Calculate Distance-Weighted Mean for the cluster (ADR-012 refinement)
+    # Weights decay linearly from 1.0 (ATM) downwards to ~0.125 at ±7 strikes
+    def get_weighted_sum(rows: list[OptionChainRow]) -> tuple[float, float]:
+        total_weighted_oi = 0.0
+        total_weight = 0.0
+        for r in rows:
+            # Distance in strikes from ATM: ATM strike is weight 1.0
+            # Offset = abs(offset_in_strikes)
+            # Weight = 1.0 - (offset / (count + 1))
+            try:
+                offset = abs(target_strikes.index(r.strike) - target_strikes.index(atm_strike))
+            except (ValueError, IndexError):
+                offset = 0 # should not happen given target_strikes build logic
+            
+            weight = max(0.01, 1.0 - (offset / (count + 1)))
+            total_weighted_oi += r.oi_change * weight
+            total_weight += weight
+            
+        return total_weighted_oi, total_weight
+
+    ce_w_sum, ce_w_total = get_weighted_sum(ce_cluster)
+    pe_w_sum, pe_w_total = get_weighted_sum(pe_cluster)
+    
+    # Final Mean = Weighted Sum / Total Weight
+    ce_mean = ce_w_sum / ce_w_total if ce_w_total > 0 else 0
+    pe_mean = pe_w_sum / pe_w_total if pe_w_total > 0 else 0
+    
+    return StrikeCluster(
+        atm_strike=atm_strike,
+        spot_price=spot_price,
+        ce_cluster=ce_cluster,
+        pe_cluster=pe_cluster,
+        total_ce_oi_change=int(round(ce_mean)),
+        total_pe_oi_change=int(round(pe_mean)),
+    )
+
 
 
 def _determine_status(score: int, iv_capped: bool) -> str:
@@ -119,7 +186,7 @@ def _build_summary_raw(
 
 
 def evaluate(
-    option_chain: list,
+    option_chain: list[OptionChainRow],
     candle_buffer: deque,
     iv_buffer: deque,
     prev_levels: PreviousDayLevels,
@@ -163,13 +230,21 @@ def evaluate(
         else settings.sensex_strike_interval
     )
 
-    # Find ATM CE and PE
+    # 1. Find single ATM row for Greek-heavy conditions (IV, Gamma/Theta, Move Ratio)
     atm = find_atm(option_chain, spot_price, strike_interval)
+
+    # 2. Build multi-strike cluster for OI Flow and Trend Phases (ADR-012)
+    cluster = build_strike_cluster(
+        option_chain, 
+        atm.atm_strike, 
+        settings.oi_multi_strike_count,
+        spot_price
+    )
 
     # ── Run all 7 conditions ─────────────────────────────────────────────
     c1_iv = score_iv_change(iv_buffer, dte)
     c2_mom = score_momentum(candle_buffer)
-    c3_oi = score_oi_flow(atm, candle_buffer)
+    c3_oi = score_oi_flow(cluster, candle_buffer)
     c4_gt = score_gamma_theta(atm, dte)
     c5_pdhl = score_pdhl_breakout(spot_price, prev_levels)
     c6_move = score_move_ratio(atm, candle_buffer, dte)
@@ -199,6 +274,8 @@ def evaluate(
         max_score=max_score,
         status=status,
         iv_capped=iv_capped,
+        total_ce_oi_change=cluster.total_ce_oi_change,
+        total_pe_oi_change=cluster.total_pe_oi_change,
         conditions=conditions,
         summary_raw=summary_raw,
         previous_status=previous_status,

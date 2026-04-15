@@ -255,10 +255,13 @@ class SupabaseDB:
                     "move_ratio": get_status("move_ratio"),
                     "vwap_distance": get_status("vwap_distance"),
                     "iv_capped": score.iv_capped,
+                    "ce_oi_change": score.total_ce_oi_change,
+                    "pe_oi_change": score.total_pe_oi_change,
                     "summary_raw": score.summary_raw,
                     "summary": score.summary,
                 }
             ).execute()
+
         except Exception as e:
             # Log but don't raise — scoring continues even if DB write fails
             logger.error(f"Failed to write environment_log (scoring continues): {e}")

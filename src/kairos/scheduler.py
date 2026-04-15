@@ -44,6 +44,7 @@ class SessionState:
         self.active_config: Optional[SessionConfig] = None
         self.prev_levels: Optional[PreviousDayLevels] = None
         self.previous_status: Optional[str] = None
+        self.previous_conditions: list[ConditionResult] = []
 
         # Health tracking
         self.cycle_count: int = 0
@@ -73,6 +74,7 @@ class SessionState:
         self.cycle_count = 0
         self.warmup_complete = False
         self.previous_status = None
+        self.previous_conditions = []
         self.consecutive_failures = 0
         self.api_warning_sent = False
         self.stale_alert_sent = False
@@ -101,28 +103,46 @@ state = SessionState()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def is_active_session() -> bool:
-    """Returns True if current IST time is within an active trading session."""
-
+    """
+    Returns True if current IST time is within an active trading session.
+    Includes a 15-minute warmup window ONLY before the post-lunch session (Session 2).
+    """
     now = datetime.now(IST)
-    h, m = now.hour, now.minute
-    current = (h, m)
+    current = (now.hour, now.minute)
 
+    # Official session windows
     s1_start = settings.session_1_start
     s1_end = settings.session_1_end
     s2_start = settings.session_2_start
     s2_end = settings.session_2_end
 
+    # Calculate Session 2 Warmup start (15 minutes before s2_start)
+    s2_dt = datetime.combine(now.date(), datetime.min.time().replace(hour=s2_start[0], minute=s2_start[1]))
+    warmup_mins = max(settings.candle_buffer_size, settings.iv_change_lookback)
+    s2_warmup_start_dt = s2_dt - timedelta(minutes=warmup_mins)
+    s2_warmup_start = (s2_warmup_start_dt.hour, s2_warmup_start_dt.minute)
+
+    # Session 1 starts exactly at 09:15 (no data available before open)
     in_s1 = s1_start <= current <= s1_end
-    in_s2 = s2_start <= current <= s2_end
+    # Session 2 starts with warmup at ~12:45 IST
+    in_s2 = s2_warmup_start <= current <= s2_end
 
     return in_s1 or in_s2
 
 
 def is_lunch_break() -> bool:
-    """Returns True if current IST time falls in the gap between session 1 and session 2."""
+    """Returns True if current IST time falls in the gap before the Session 2 warmup begins."""
     now = datetime.now(IST)
     current = (now.hour, now.minute)
-    return settings.session_1_end < current < settings.session_2_start
+
+    # Warmup for Session 2 starts 15 minutes before the official time
+    s2_h, s2_m = settings.session_2_start
+    s2_dt = datetime.combine(now.date(), datetime.min.time().replace(hour=s2_h, minute=s2_m))
+    warmup_mins = max(settings.candle_buffer_size, settings.iv_change_lookback)
+    s2_warmup_start_dt = s2_dt - timedelta(minutes=warmup_mins)
+    s2_warmup_start = (s2_warmup_start_dt.hour, s2_warmup_start_dt.minute)
+
+    return settings.session_1_end < current < s2_warmup_start
 
 
 def get_session_name() -> str:
@@ -432,27 +452,40 @@ async def run_cycle() -> None:
 
     # 11. State change detection and Discord alert
 
-    if score.state_changed or just_warmed_up:
+    # Detect significant changes: Status, Color, or OI Phase shifts (ADR-017)
+    significant_change = False
+    if state.previous_conditions:
+        if len(state.previous_conditions) != len(score.conditions):
+            significant_change = True
+        else:
+            for old_c, new_c in zip(state.previous_conditions, score.conditions):
+                # Rule 1: Always alert if the Color (Status) of any condition changes
+                if old_c.status != new_c.status:
+                    significant_change = True
+                    break
+                
+                # Rule 2: For OI Flow, alert if the Phase label changes (ignore raw number jitter)
+                if new_c.name == "oi_flow":
+                    old_phase = old_c.detail.split('|')[0].strip() if '|' in old_c.detail else old_c.detail
+                    new_phase = new_c.detail.split('|')[0].strip() if '|' in new_c.detail else new_c.detail
+                    if old_phase != new_phase:
+                        significant_change = True
+                        break
+    elif score.conditions:
+        significant_change = True  # First cycle with scoring data
+
+    if (score.state_changed or just_warmed_up or significant_change) and state.warmup_complete:
         if score.state_changed:
             logger.info(
                 f"State change: {state.previous_status} → {score.status} "
                 f"(score {score.score}/8)"
             )
         
-        # Only alert for Signal Start (entering GO), Signal End (leaving GO),
-        # or the very first cycle of a session (proof of life).
-        # We also trigger an alert automatically right after Warmup completes!
-        is_signal_start = (score.status == "GO")
-        is_signal_end = (state.previous_status == "GO")
-        is_first_cycle = (state.previous_status is None)
-        
-        if is_signal_start or is_signal_end or is_first_cycle or just_warmed_up:
-            await notifier.post_environment_alert(score)
-        else:
-            logger.info(f"Discord: environment alert suppressed for {score.status} (noise reduction)")
-
+        # Post environment alert for significant shifts
+        await notifier.post_environment_alert(score)
 
     state.previous_status = score.status
+    state.previous_conditions = score.conditions
     logger.debug(
         f"Cycle {state.cycle_count}: {score.status} {score.score}/8 "
         f"(DTE={dte}, iv_capped={score.iv_capped})"

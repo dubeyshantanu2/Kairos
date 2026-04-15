@@ -5,6 +5,7 @@ from kairos.models import (
     OptionChainRow,
     PreviousDayLevels,
     ATMStrikes,
+    StrikeCluster,
 )
 
 @pytest.fixture
@@ -65,3 +66,18 @@ def make_atm(make_option_row):
         pe = make_option_row(atm_strike, "PE", gamma=p_gamma, theta=p_theta, oi_change=pe_oi_change, ltp=pe_ltp)
         return ATMStrikes(atm_strike=atm_strike, ce=ce, pe=pe, spot_price=spot_price)
     return _make
+
+@pytest.fixture
+def make_cluster():
+    def _make(spot_price, ce_oi_change=0, pe_oi_change=0):
+        atm_strike = round(spot_price / 50) * 50
+        return StrikeCluster(
+            atm_strike=atm_strike,
+            spot_price=spot_price,
+            ce_cluster=[],
+            pe_cluster=[],
+            total_ce_oi_change=ce_oi_change,
+            total_pe_oi_change=pe_oi_change
+        )
+    return _make
+

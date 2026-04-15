@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **15-Minute Post-Lunch Warmup Window (`scheduler.py`):**
+  - The system now automatically starts fetching and buffering data 15 minutes before the official start of Session 2 (at 12:45 IST).
+  - This warmup window is **exclusive to Session 2**; Session 1 continues to start exactly at the official market open (09:15 IST) as pre-market data is unavailable.
+  - During this post-lunch warmup, environment alerts are suppressed to prevent noisy or inaccurate notifications while buffers populate.
+  - The first official Session 2 signal is delivered exactly at 13:00 IST with fully populated 15-minute data buffers.
+  - Updated `is_active_session` and `is_lunch_break` helpers to handle this specific transition.
+  - Documented via updates to `directives/adr/ADR-013_lunch_break_alert.md`.
+- **Granular Condition & Status Alerting (`scheduler.py`, `notifier.py`):**
+  - Replaced the noise-reduction strategy (ADR-007) with a granular alerting system (ADR-015) per user request.
+  - The system now alerts on *every* status transition (GO ↔ CAUTION ↔ AVOID), ensuring full visibility into environment changes.
+  - Implemented cycle-by-cycle tracking of all 7 scoring conditions; any change in a condition's status or human-readable detail triggers a Discord notification.
+  - This ensures the trader is aware of all market fluctuations and value changes every minute.
+  - Documented in `directives/adr/ADR-015_granular_condition_alerting.md`.
+- **Trend Phase-Driven OI Flow Scoring (`processor.py`):**
+  - Refactored `score_oi_flow` to derive status and points directly from calculated Trend Phases rather than strict opposing-side unwinding.
+  - "Long Buildup" and "Short Buildup" now score **GREEN (1 pt)**, providing consistent points for stable trend continuations even if both sides build OI.
+  - "Short Covering" and "Long Unwinding" now score **RED (0 pts)** and are labeled as "Pullbacks" per user request to avoid these trades.
+  - Added specific detection for "Straddle Writing" in neutral markets where both sides build OI without price movement.
+  - Documented in `directives/adr/ADR-016_trend_phase_oi_scoring.md`.
+- **Sustained OI Window & Noise-Reduction Alerting (`scheduler.py`, `config.py`):**
+  - Implemented a **5-minute rolling window** for all OI calculations (T vs T-5) to filter out 1-minute market jitter and capture institutional conviction.
+  - Redesigned alerting logic to eliminate "digit jitter" noise. Discord notifications now only trigger when:
+    - Overall **Environment Status** changes (GO ↔ CAUTION ↔ AVOID).
+    - A **Condition Color/Emoji** changes.
+    - An **OI Trend Phase** changes (e.g., Neutral → Short Buildup).
+  - This ensures that every alert represents a significant market shift or trade opportunity.
+  - Documented in `directives/adr/ADR-017_sustained_oi_window.md`.
 - **Lunch Break No-Trading Alert (`scheduler.py`, `notifier.py`):**
   - New Discord alert fires once when the engine enters the dead zone between session 1 (ends 11:45 IST) and session 2 (starts 13:00 IST).
   - Posts to both `#environment` and `#system-check` channels, explicitly warning the trader not to act on stale signals during the 75-minute gap.

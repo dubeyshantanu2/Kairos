@@ -22,7 +22,7 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **DTE = 2 (Mid-Week):** 🟢 > +0.30 | 🟡 > -0.20 | 🔴 Below -0.20
 * **DTE <= 1 (Expiry):** 🟢 > +0.20 | 🟡 > -0.50 | 🔴 Below -0.50
 * **🔴 Red Status:** Triggers the **IV Cap** override to protect against theta-crush.
-* **Warmup:** Returns CAUTION (1 point) until 15 minutes of uninterrupted data have elapsed.
+* **Warmup:** System fetches data silently 15 minutes prior to Session 2 start, ensuring it outputs fully-scored signals (rather than CAUTION) exactly at the 13:00 IST bell. (Morning session warms up naturally from 09:15–09:30).
 
 ### Condition 2: Underlying Momentum & Consistency
 **Weight:** 1 Point | **Time Parameter:** 5-Minute Lookback + 15-Minute Volume Avg
@@ -84,7 +84,7 @@ The engine correlates Price Δ with total ATM OI Δ (CE+PE) over the lookback pe
 * **🟢 Green (1 Pt):** Ratio > 1.0 (Delivering greater volatile range than priced).
 * **🟡 Yellow (0 Pts):** Ratio 0.7 - 1.0 (Fair pricing).
 * **🔴 Red (0 Pts):** Ratio < 0.7 (Premium is entirely overvalued, theta sink).
-* **Warmup:** Returns CAUTION until 15 minutes of uninterrupted data have elapsed.
+* **Warmup:** System fetches data silently 15 minutes prior to Session 2 start to fully populate the buffer.
 
 ### Condition 7: VWAP Distance Expansion
 **Weight:** 1 Point | **Time Parameter:** Current Session (Resets Daily)

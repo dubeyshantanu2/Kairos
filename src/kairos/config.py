@@ -82,8 +82,11 @@ class Settings(BaseSettings):
     momentum_trend_count_yellow: int = 3
 
     # ── Condition 3: OI Flow & Trend Phase ───────────────────────────────
-    oi_lookback_cycles: int = 5        # compare OI against N cycles ago (5 = 5 min)
-    trend_phase_oi_threshold: int = 5000 # min ATM OI change to register buildup/unwinding
+    oi_lookback_cycles: int = 6        # compare OI against N cycles ago (6 = 5 min delta)
+    oi_multi_strike_count: int = 7     # number of strikes on each side of ATM (7 up + 7 down + 1 ATM = 15 total)
+    trend_phase_oi_threshold: int = 8000 # min WEIGHTED MEAN OI change across cluster to register buildup/unwinding
+
+
 
     # ── Condition 4: Gamma/Theta — DTE-scaled ────────────────────────────
     # DTE >= 3 (lenient — early week, plenty of time)
