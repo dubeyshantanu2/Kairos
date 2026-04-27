@@ -110,7 +110,24 @@ python -m kairos.scheduler
 ```
 *(Ensure a valid session is marked as `ACTIVE` inside your Supabase `session_config` table, otherwise the engine will gracefully idle.)*
 
-### 5. Direct CLI Control (Bypass Discord)
+### 5. Fly.io Deployment
+The engine can be easily deployed to [Fly.io](https://fly.io) using the included `Dockerfile`.
+
+1. Install the Fly CLI (`flyctl`).
+2. Run the launch command from the project root. If `fly` is not found, use `flyctl`:
+   ```bash
+   flyctl launch
+   ```
+3. Set your environment variables (secrets) securely. **Never copy the `.env` file directly.**
+   ```bash
+   cat .env | flyctl secrets import
+   ```
+4. Deploy the application:
+   ```bash
+   flyctl deploy
+   ```
+
+### 6. Direct CLI Control (Bypass Discord)
 For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.
 ```bash
 # Start monitoring NIFTY for a specific expiry

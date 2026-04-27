@@ -239,13 +239,25 @@ async def run_cycle() -> None:
             state.active_config = config
             state.startup_done = False
             
-            # Fetch fresh expiries anyway so Discord Orchestrator has April dates available
+            # Fetch fresh expiries and attempt auto-rollover
             try:
                 expiries = await fetcher.get_available_expiries(config.symbol)
                 await db.write_available_expiries(expiries)
                 logger.info(f"Refreshed {len(expiries)} expiries for {config.symbol} despite stale session.")
+                
+                # Auto-rollover to the next upcoming expiry of the same type
+                future_expiries = [e for e in expiries if e.expiry >= date.today() and e.expiry_type == config.expiry_type]
+                if future_expiries:
+                    future_expiries.sort(key=lambda x: x.expiry)
+                    next_expiry = future_expiries[0]
+                    logger.info(f"Auto-rollover triggered: updating session to {next_expiry.expiry}")
+                    await db.set_active_session(
+                        symbol=config.symbol, 
+                        expiry=next_expiry.expiry, 
+                        expiry_type=config.expiry_type
+                    )
             except Exception as e:
-                logger.warning(f"Failed to refresh available expiries for stale session {config.symbol}: {e}")
+                logger.warning(f"Failed to auto-rollover for stale session {config.symbol}: {e}")
 
         if state.in_session:
             state.in_session = False

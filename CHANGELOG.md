@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Fly.io Deployment Setup**:
+  - Added `Dockerfile` allowing for reliable explicit builds on Fly.io using the Hatchling `pyproject.toml` configuration.
+  - Added `.dockerignore` to secure image creation and prevent `.env` secrets leakage.
+  - Documented deployment process in `README.md` and added architectural decision in `ADR-019`.
 - **Greeks-Aware OI Flow Scoring Engine (`processor.py`, `engine.py`):**
   - Upgraded Condition 3 from a simple delta classifier to a professional-grade scoring system.
   - Integrated **GEX (Gamma Exposure)** and **NDE (Net Delta Exposure)** to capture institutional hedging and conviction.
