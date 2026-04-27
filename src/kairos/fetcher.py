@@ -92,9 +92,10 @@ class DhanFetcher:
                     raise DhanAuthError(f"Authentication failed: No access token in response. Data: {data}")
                 
                 self._client.headers["access-token"] = new_token
-                logger.info("Successfully fetched new Dhan access token via TOTP.")
+                token_preview = f"{new_token[:5]}...{new_token[-5:]}" if len(new_token) > 10 else "***"
+                logger.info(f"Successfully fetched new Dhan access token via TOTP (Preview: {token_preview}).")
             else:
-                logger.error(f"Dhan auth failed with {response.status_code}: {response.text}")
+                logger.error(f"Dhan auth failed! Status: {response.status_code} | URL: {auth_url} | Response: {response.text[:500]}")
                 raise DhanAuthError(f"Dhan TOTP auth failed. Status: {response.status_code}")
                 
         except httpx.RequestError as e:
@@ -123,13 +124,19 @@ class DhanFetcher:
                 response = await self._client.get(endpoint, **kwargs)
 
                 if response.status_code == 401:
+                    token = self._client.headers.get("access-token", "NONE")
+                    token_preview = f"{token[:5]}..." if token != "NONE" else "NONE"
+                    logger.warning(f"401 Unauthorized on GET {endpoint} | Token Preview: {token_preview}")
+                    
                     if settings.dhan_totp_secret and settings.dhan_client_pin:
-                        logger.info("Received 401 Unauthorized. Attempting to re-authenticate with TOTP...")
+                        logger.info("Attempting re-authentication with TOTP...")
                         await self._authenticate()
                         response = await self._client.get(endpoint, **kwargs)
                         if response.status_code == 401:
+                            logger.error(f"Post-reauth 401 on GET {endpoint} | Response: {response.text[:200]}")
                             raise DhanAuthError("Dhan API auth failed (401) again after re-authentication")
                     else:
+                        logger.error(f"No TOTP credentials available to handle 401 on GET {endpoint} | Response: {response.text[:200]}")
                         raise DhanAuthError("Dhan API auth failed (401) — access token may be expired")
 
                 if response.status_code != 200:
@@ -172,13 +179,19 @@ class DhanFetcher:
                 response = await self._client.post(endpoint, json=payload)
 
                 if response.status_code == 401:
+                    token = self._client.headers.get("access-token", "NONE")
+                    token_preview = f"{token[:5]}..." if token != "NONE" else "NONE"
+                    logger.warning(f"401 Unauthorized on POST {endpoint} | Token Preview: {token_preview}")
+
                     if settings.dhan_totp_secret and settings.dhan_client_pin:
-                        logger.info("Received 401 Unauthorized. Attempting to re-authenticate with TOTP...")
+                        logger.info("Attempting re-authentication with TOTP...")
                         await self._authenticate()
                         response = await self._client.post(endpoint, json=payload)
                         if response.status_code == 401:
+                            logger.error(f"Post-reauth 401 on POST {endpoint} | Response: {response.text[:200]}")
                             raise DhanAuthError("Dhan API auth failed (401) again after re-authentication")
                     else:
+                        logger.error(f"No TOTP credentials available to handle 401 on POST {endpoint} | Response: {response.text[:200]}")
                         raise DhanAuthError("Dhan API auth failed (401) — access token may be expired")
 
                 if response.status_code != 200:

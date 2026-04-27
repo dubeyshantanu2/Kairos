@@ -13,8 +13,10 @@ from kairos.models import (
     ATMStrikes,
     ConditionResult,
     OHLCVCandle,
+    OIFlowResult,
     PreviousDayLevels,
     StrikeCluster,
+    TrendPhase,
 )
 
 
@@ -163,86 +165,187 @@ def score_momentum(candle_buffer: deque) -> ConditionResult:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Condition 3 — OI Flow at ATM (max 1 point)
+# Condition 3 — OI Flow at ATM (max 1 point) — Greeks-Aware Scoring Engine
 # ─────────────────────────────────────────────────────────────────────────────
 
-def score_oi_flow(cluster: StrikeCluster, candle_buffer: deque) -> ConditionResult:
+def _classify_phase(
+    total_ce_oi_change: int,
+    total_pe_oi_change: int,
+    price_change: float,
+) -> TrendPhase:
     """
-    Checks whether smart money is establishing a directional bias across the ATM cluster.
-    
-    Evaluates Distance-Weighted Mean Open Interest (OI) deltas across ±7 strikes from ATM.
-    ATM strikes carry 1.0 weight, while wing strikes (±7) carry 0.125 weight.
-    CE building + PE unwinding = strongly Bearish. PE building + CE unwinding = strongly Bullish.
-    
-    Determines the market Trend Phase (Long Buildup, Short Covering, etc.)
-    by comparing underlying price action vs the WEIGHTED MEAN cluster OI flow.
+    Classify the current market trend phase from price delta vs OI flow.
+    Unchanged from original logic — just extracted to a named helper.
+    """
+    total_oi_change = total_ce_oi_change + total_pe_oi_change
+    oi_thresh = settings.trend_phase_oi_threshold
 
-    
-    :param cluster: A consolidated StrikeCluster object containing ATM ±7 CE and PE rows.
-    :type cluster: StrikeCluster
-    :param candle_buffer: Full rolling deque to calculate the delta price.
-    :type candle_buffer: collections.deque
-    :return: Extracted conviction result. Returns GREEN for unified direction, RED for straddle writes. (Max: 1)
-    :rtype: ConditionResult
+    if price_change > 0:
+        if total_oi_change > oi_thresh:
+            return TrendPhase.LONG_BUILDUP
+        elif total_oi_change < -oi_thresh:
+            return TrendPhase.SHORT_COVERING
+    elif price_change < 0:
+        if total_oi_change > oi_thresh:
+            return TrendPhase.SHORT_BUILDUP
+        elif total_oi_change < -oi_thresh:
+            return TrendPhase.LONG_UNWINDING
+    return TrendPhase.NEUTRAL
+
+
+def score_oi_flow(
+    cluster: StrikeCluster,
+    iv_change_rate: float,
+    candle_buffer: deque,
+) -> tuple[ConditionResult, OIFlowResult]:
+    """
+    Upgraded Condition 3: Full-chain Greeks-aware OI Flow scoring engine.
+
+    Evaluates GEX (gamma exposure), NDE (net delta exposure), vega trap,
+    PCR, and theta dominance alongside the existing phase classification
+    to produce a conviction score.
+
+    Returns:
+        tuple of (ConditionResult for score aggregation, OIFlowResult for Discord formatting)
     """
     lookback = settings.oi_lookback_cycles
     if len(candle_buffer) < lookback:
-        return _caution("oi_flow", 1, f"Warming up — {lookback} candles needed for trend phase")
+        warmup_result = _caution("oi_flow", 1, f"Warming up — {lookback} candles needed for trend phase")
+        warmup_oi = OIFlowResult(
+            score=0,
+            phase=TrendPhase.NEUTRAL,
+            reason="Warming up",
+            gex_state="neutral",
+            nde_state="neutral",
+            vega_trap=False,
+            pcr=cluster.pcr,
+            iv_skew=cluster.iv_skew,
+            ce_wall_strike=cluster.ce_wall_strike,
+            ce_wall_oi_cr=cluster.ce_wall_oi_cr,
+            pe_wall_strike=cluster.pe_wall_strike,
+            pe_wall_oi_cr=cluster.pe_wall_oi_cr,
+            pe_unwind_above_spot=cluster.pe_unwind_above_spot,
+            ce_unwind_below_spot=cluster.ce_unwind_below_spot,
+        )
+        return warmup_result, warmup_oi
 
-    ce_change = cluster.total_ce_oi_change
-    pe_change = cluster.total_pe_oi_change
+    # ── STEP 1: Phase classification (UNCHANGED) ────────────────────────
+    phase = _classify_phase(
+        cluster.total_ce_oi_change,
+        cluster.total_pe_oi_change,
+        cluster.price_change,
+    )
+    phase_is_bearish = phase in (TrendPhase.SHORT_BUILDUP, TrendPhase.LONG_UNWINDING)
+    phase_is_bullish = phase in (TrendPhase.LONG_BUILDUP, TrendPhase.SHORT_COVERING)
+    phase_is_neutral = phase == TrendPhase.NEUTRAL
 
-    # ── Conviction Logic ───────────────────────────────────────────────────
-    ce_building = ce_change > 0
-    pe_building = pe_change > 0
-    ce_unwinding = ce_change < 0
-    pe_unwinding = pe_change < 0
-
-    # ── Trend Phase Logic ──────────────────────────────────────────────────
-    old_close = list(candle_buffer)[-lookback].close
-    price_change = cluster.spot_price - old_close
-    total_oi_change = ce_change + pe_change
-    oi_thresh = settings.trend_phase_oi_threshold
-
-    phase = "Neutral 🟡"
-    if price_change > 0:
-        if total_oi_change > oi_thresh:
-            phase = "Long Buildup 🟢"
-        elif total_oi_change < -oi_thresh:
-            phase = "Short Covering 🔵"
-    elif price_change < 0:
-        if total_oi_change > oi_thresh:
-            phase = "Short Buildup 🔴"
-        elif total_oi_change < -oi_thresh:
-            phase = "Long Unwinding 🟠"
-
-    # ── Scoring & Mapping (ADR-016) ────────────────────────────────────────
-    # Long/Short Buildup = GREEN (1 pt)
-    # Short Covering / Long Unwinding = RED (0 pt) - User wants to avoid pullbacks
-    # Neutral = RED (0 pt)
-
-    if phase == "Long Buildup 🟢":
-        status, points = "GREEN", 1
-        label = "Bullish — Long Buildup"
-    elif phase == "Short Buildup 🔴":
-        status, points = "GREEN", 1
-        label = "Bearish — Short Buildup"
-    elif phase == "Short Covering 🔵":
-        status, points = "RED", 0
-        label = "Bullish (Pullback) — Short Covering"
-    elif phase == "Long Unwinding 🟠":
-        status, points = "RED", 0
-        label = "Bearish (Pullback) — Long Unwinding"
+    # ── STEP 2: GEX gate ────────────────────────────────────────────────
+    if cluster.net_gex > settings.gex_pin_threshold:
+        gex_state = "pin"
+    elif cluster.net_gex < -settings.gex_trend_threshold:
+        gex_state = "trend"
     else:
-        status, points = "RED", 0
-        # Check for heavy straddle writing in neutral market
-        if ce_change > (oi_thresh // 2) and pe_change > (oi_thresh // 2):
-            label = "Neutral — Straddle Writing"
-        else:
-            label = "Neutral"
+        gex_state = "neutral"
 
-    detail = f"{label} | CE Δ{ce_change:+d} | PE Δ{pe_change:+d}"
-    return _result("oi_flow", status, points, 1, detail)
+    # ── STEP 3: NDE alignment ───────────────────────────────────────────
+    nde = cluster.net_delta_exposure
+    if phase_is_bearish and nde < -settings.nde_threshold:
+        nde_state = "confirms"
+    elif phase_is_bullish and nde > settings.nde_threshold:
+        nde_state = "confirms"
+    elif phase_is_bearish and nde > settings.nde_threshold:
+        nde_state = "contradicts"
+    elif phase_is_bullish and nde < -settings.nde_threshold:
+        nde_state = "contradicts"
+    else:
+        nde_state = "neutral"
+
+    # ── STEP 4: Vega trap ───────────────────────────────────────────────
+    vega_trap = (
+        cluster.atm_vega_exposure > settings.vega_high_threshold
+        and iv_change_rate < settings.vega_trap_iv_threshold
+    )
+
+    # ── STEP 5: PCR confirmation ────────────────────────────────────────
+    pcr_confirms = (
+        (phase_is_bearish and cluster.pcr < settings.pcr_bearish_threshold)
+        or (phase_is_bullish and cluster.pcr > settings.pcr_bullish_threshold)
+    )
+
+    # ── STEP 6: Theta dominance ─────────────────────────────────────────
+    theta_dominant = cluster.theta_burn_rate > settings.theta_dominant_threshold
+
+    # ── STEP 7: Score assembly (priority order) ─────────────────────────
+    # Common kwargs for OIFlowResult construction
+    common = dict(
+        gex_state=gex_state,
+        nde_state=nde_state,
+        vega_trap=vega_trap,
+        pcr=cluster.pcr,
+        iv_skew=cluster.iv_skew,
+        ce_wall_strike=cluster.ce_wall_strike,
+        ce_wall_oi_cr=cluster.ce_wall_oi_cr,
+        pe_wall_strike=cluster.pe_wall_strike,
+        pe_wall_oi_cr=cluster.pe_wall_oi_cr,
+        pe_unwind_above_spot=cluster.pe_unwind_above_spot,
+        ce_unwind_below_spot=cluster.ce_unwind_below_spot,
+    )
+
+    def _make_result(score: int, reason: str) -> tuple[ConditionResult, OIFlowResult]:
+        status = "GREEN" if score == 1 else "RED"
+        oi_result = OIFlowResult(score=score, phase=phase, reason=reason, **common)
+        cond_result = _result("oi_flow", status, score, 1, reason)
+        return cond_result, oi_result
+
+    # RULE B (highest priority): Vega trap → score=0
+    if vega_trap:
+        return _make_result(
+            0,
+            f"Vega trap — IV contracting ({iv_change_rate:+.2f}%) into high premium exposure",
+        )
+
+    # RULE C (second priority): NDE contradiction → score=0
+    if nde_state == "contradicts":
+        nde_dir = "net long delta" if nde > 0 else "net short delta"
+        return _make_result(
+            0,
+            f"NDE contradicts phase — options {nde_dir} vs {phase.value} price action",
+        )
+
+    # RULE A (third priority): GEX pin → score=0
+    if gex_state == "pin":
+        return _make_result(
+            0,
+            f"GEX pin active ({cluster.net_gex:+,.0f}) — dealers absorbing moves",
+        )
+
+    # Neutral phase → score=0
+    if phase_is_neutral:
+        return _make_result(
+            0,
+            "Neutral phase — low OI participation, no directional conviction",
+        )
+
+    # Theta dominant AND NDE not confirming → score=0
+    if theta_dominant and nde_state != "confirms":
+        return _make_result(
+            0,
+            "Theta dominant — writers entrenched, premium decay accelerating",
+        )
+
+    # RULE D: ALL conditions must pass for score=1
+    if gex_state == "trend" and nde_state == "confirms" and pcr_confirms:
+        direction = "bearish" if phase_is_bearish else "bullish"
+        return _make_result(
+            1,
+            f"Unified {direction} conviction — GEX trending, NDE confirms, PCR aligned",
+        )
+
+    # Default fallback → score=0
+    return _make_result(
+        0,
+        "Mixed signals — partial conviction, wait for alignment",
+    )
 
 
 

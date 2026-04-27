@@ -33,7 +33,7 @@ def make_candle(mock_now):
 
 @pytest.fixture
 def make_option_row(mock_now, mock_date):
-    def _make(strike, opt_type, iv=0.15, gamma=0.0, theta=0.0, oi_change=0, ltp=100.0):
+    def _make(strike, opt_type, iv=0.15, delta=0.5, gamma=0.0, theta=0.0, vega=0.0, oi=1000, previous_oi=1100, oi_change=10, ltp=100.0):
         return OptionChainRow(
             timestamp=mock_now,
             symbol="NIFTY",
@@ -41,11 +41,12 @@ def make_option_row(mock_now, mock_date):
             strike=strike,
             option_type=opt_type,
             iv=iv,
-            delta=0.5,
+            delta=delta,
             gamma=gamma,
             theta=theta,
-            vega=0.0,
-            oi=1000,
+            vega=vega,
+            oi=oi,
+            previous_oi=previous_oi,
             oi_change=oi_change,
             volume=500,
             ltp=ltp,
@@ -69,7 +70,7 @@ def make_atm(make_option_row):
 
 @pytest.fixture
 def make_cluster():
-    def _make(spot_price, ce_oi_change=0, pe_oi_change=0):
+    def _make(spot_price, ce_oi_change=0, pe_oi_change=0, **kwargs):
         atm_strike = round(spot_price / 50) * 50
         return StrikeCluster(
             atm_strike=atm_strike,
@@ -77,7 +78,8 @@ def make_cluster():
             ce_cluster=[],
             pe_cluster=[],
             total_ce_oi_change=ce_oi_change,
-            total_pe_oi_change=pe_oi_change
+            total_pe_oi_change=pe_oi_change,
+            **kwargs,
         )
     return _make
 

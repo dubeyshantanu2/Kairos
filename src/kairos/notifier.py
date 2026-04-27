@@ -12,7 +12,7 @@ import httpx
 from loguru import logger
 
 from kairos.config import settings
-from kairos.models import ConditionResult, EnvironmentScore, HealthStatus
+from kairos.models import ConditionResult, EnvironmentScore, HealthStatus, OIFlowResult
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -28,6 +28,48 @@ CONDITION_LABELS = {
     "move_ratio": "Move",
     "vwap_distance": "VWAP",
 }
+
+_PHASE_EMOJI = {
+    "Long Buildup":   "🟢",
+    "Short Buildup":  "🔴",
+    "Long Unwinding": "🟠",
+    "Short Covering": "🔵",
+    "Neutral":        "🟡",
+}
+
+
+def _format_pcr(pcr: float) -> str:
+    """Format PCR value with qualitative label for Discord."""
+    if pcr < 0.90:
+        return f"{pcr:.2f} — put writers absent (strongly bearish)"
+    if pcr < 0.95:
+        return f"{pcr:.2f} — put writers absent (bearish lean)"
+    if pcr <= 1.05:
+        return f"{pcr:.2f} — balanced"
+    if pcr <= 1.15:
+        return f"{pcr:.2f} — put writers defending (bullish lean)"
+    return f"{pcr:.2f} — put writers dominant (strongly bullish)"
+
+
+def _format_oi_flow_line(r: OIFlowResult) -> str:
+    """Build the compact OI Flow condition line for Discord."""
+    phase_str = f"{r.phase.value} {_PHASE_EMOJI.get(r.phase.value, '🟡')}"
+
+    gex_token = {
+        "pin":     "GEX pin ⚠️",
+        "trend":   "GEX trend ✓",
+        "neutral": "GEX neutral",
+    }[r.gex_state]
+
+    nde_token = {
+        "confirms":    "NDE confirms ✓",
+        "contradicts": "NDE contra ✗",
+        "neutral":     "NDE ambiguous",
+    }[r.nde_state]
+
+    vega_token = " | Vega trap 🔥" if r.vega_trap else ""
+
+    return f"{phase_str} | {gex_token} | {nde_token}{vega_token}"
 
 
 class Notifier:
@@ -84,13 +126,19 @@ class Notifier:
         status_emoji = STATUS_EMOJI.get(score.status, "⚪")
         cap_note = "  ⚠️ IV Cap Active" if (score.iv_capped and score.score >= settings.score_go_min) else ""
 
-        # Build condition lines
+        # Build condition lines — use compact OI flow line if available
         condition_lines = []
         for c in score.conditions:
             emoji = CONDITION_EMOJI.get(c.status, "⚪")
             label = CONDITION_LABELS.get(c.name, c.name)
             pts = f"[{c.points}/{c.max_points}]" if c.max_points > 1 else ""
-            condition_lines.append(f"{emoji} {label:<9}: {c.detail} {pts}".rstrip())
+
+            if c.name == "oi_flow" and score.oi_flow_result:
+                # Use compact OI flow line with GEX/NDE/vega tokens
+                oi_detail = _format_oi_flow_line(score.oi_flow_result)
+                condition_lines.append(f"{emoji} {label:<9}: {oi_detail}")
+            else:
+                condition_lines.append(f"{emoji} {label:<9}: {c.detail} {pts}".rstrip())
 
         session_label = _get_session_label()
         time_str = datetime.now(IST).strftime("%H:%M IST")
@@ -98,13 +146,18 @@ class Notifier:
         # Use summary if Gemini has polished it, otherwise fall back to summary_raw
         summary_text = score.summary if score.summary else _generate_fallback_summary(score)
 
+        # PCR line (only if oi_flow_result is available)
+        pcr_line = ""
+        if score.oi_flow_result:
+            pcr_line = f"PCR      : {_format_pcr(score.oi_flow_result.pcr)}\n"
+
         lines = [
             f"{status_emoji} **ENVIRONMENT: {score.status}**{cap_note}",
             "─" * 34,
             f"Index    : {score.symbol}  |  DTE: {score.dte}",
             f"Session  : {session_label}",
             f"Expiry   : {score.expiry.strftime('%d %b %Y')} ({_expiry_type_label(score)})",
-            "─" * 34,
+            f"{pcr_line}{'─' * 34}",
         ] + condition_lines + [
             "─" * 34,
             f"Score    : {score.score}/{score.max_score}",
@@ -114,6 +167,11 @@ class Notifier:
             lines.append(f"⚠️ Capped at CAUTION — IV contracting")
         elif score.iv_capped:
             lines.append(f"⚠️ IV contracting — premium at risk")
+
+        # OI Flow reason footer (only on state-change alerts)
+        if score.oi_flow_result and score.state_changed:
+            prefix = "✓" if score.oi_flow_result.score == 1 else "⚠️"
+            lines.append(f"{prefix} {score.oi_flow_result.reason}")
 
         lines.append(summary_text)
         lines.append(f"🕐 {time_str}")

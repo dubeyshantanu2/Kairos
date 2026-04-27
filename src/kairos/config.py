@@ -86,7 +86,53 @@ class Settings(BaseSettings):
     oi_multi_strike_count: int = 7     # number of strikes on each side of ATM (7 up + 7 down + 1 ATM = 15 total)
     trend_phase_oi_threshold: int = 8000 # min WEIGHTED MEAN OI change across cluster to register buildup/unwinding
 
+    # ── OI Flow (Condition 3) — Full-Chain Greeks Parameters ─────────────
+    # These constants power the upgraded Greeks-aware scoring engine.
+    # All tuning happens here — no logic changes needed.
 
+    nifty_lot_size: int = 65
+    # NIFTY lot size as of 2026. Used in GEX calculation.
+
+    sensex_lot_size: int = 20
+    # SENSEX lot size. Used when symbol == "SENSEX".
+
+    oi_flow_strike_window: int = 7
+    # ATM ± N strikes for main aggregates (NDE, GEX, theta, PCR).
+    # 50pt spacing → covers ±350pts from ATM.
+
+    oi_flow_vega_window: int = 3
+    # ATM ± N strikes for vega exposure and IV skew.
+    # Tighter window because vega concentrates near ATM.
+
+    gex_pin_threshold: float = 1_300_000.0
+    # net_gex above this → dealers net long gamma → PIN ACTIVE → range.
+    # Scoring impact: caps Condition 3 score at 0 (Rule A).
+
+    gex_trend_threshold: float = 1_300_000.0
+    # |net_gex| below negative side of this → dealers net short gamma →
+    # TRENDING ACTIVE → amplifying environment for options buyers.
+
+    nde_threshold: float = 400_000.0
+    # Net Delta Exposure threshold for directional confirmation/contradiction.
+    # If NDE contradicts phase direction and exceeds this → score=0 (Rule C).
+
+    vega_high_threshold: float = 25_000_000.0
+    # atm_vega_exposure above this = significant vega concentration.
+    # Used with vega_trap_iv_threshold to detect vega trap.
+
+    vega_trap_iv_threshold: float = 0.0
+    # iv_change_rate must be BELOW this for vega trap to activate.
+    # 0.0 = any IV contraction. Raise to e.g. -0.30 for more lenience.
+
+    theta_dominant_threshold: float = 500_000_000.0
+    # theta_burn_rate above this = writers deeply entrenched.
+    # Floors score at 0 if NDE is not confirming (soft cap).
+
+    pcr_bearish_threshold: float = 0.95
+    # PCR below this = put writers absent = structurally bearish.
+
+    pcr_bullish_threshold: float = 1.05
+    # PCR above this = put writers defending = structurally bullish.
 
     # ── Condition 4: Gamma/Theta — DTE-scaled ────────────────────────────
     # DTE >= 3 (lenient — early week, plenty of time)

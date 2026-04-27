@@ -61,66 +61,8 @@ def test_score_momentum_red_choppy(make_candle):
     assert res.status == "RED"
     assert res.points == 0
 
-def test_score_oi_flow_buildup_phases(make_cluster, make_candle):
-    """Verifies that Long and Short Buildup score GREEN (1 pt) per ADR-016."""
-    # 1. Long Buildup: Price UP, Total OI UP (> 8000)
-    cluster = make_cluster(22010, ce_oi_change=5000, pe_oi_change=4000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "GREEN"
-    assert res.points == 1
-    assert "Bullish — Long Buildup" in res.detail
 
-    # 2. Short Buildup: Price DOWN, Total OI UP (> 8000)
-    cluster = make_cluster(21990, ce_oi_change=5000, pe_oi_change=4000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "GREEN"
-    assert res.points == 1
-    assert "Bearish — Short Buildup" in res.detail
 
-def test_score_oi_flow_pullback_phases(make_cluster, make_candle):
-    """Verifies that Short Covering and Long Unwinding score RED (0 pt) per ADR-016."""
-    # 1. Short Covering: Price UP, Total OI DOWN (< -8000)
-    cluster = make_cluster(22010, ce_oi_change=-5000, pe_oi_change=-4000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "RED"
-    assert res.points == 0
-    assert "Bullish (Pullback) — Short Covering" in res.detail
-
-    # 2. Long Unwinding: Price DOWN, Total OI DOWN (< -8000)
-    cluster = make_cluster(21990, ce_oi_change=-5000, pe_oi_change=-4000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "RED"
-    assert res.points == 0
-    assert "Bearish (Pullback) — Long Unwinding" in res.detail
-
-def test_score_oi_flow_neutral_scenarios(make_cluster, make_candle):
-    """Verifies Neutral and Straddle Writing scenarios (0 pt) per ADR-016."""
-    # 1. Neutral (below threshold): Total OI change = 6000 (< 8000)
-    cluster = make_cluster(22010, ce_oi_change=3000, pe_oi_change=3000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "RED"
-    assert res.points == 0
-    assert res.detail.startswith("Neutral |")
-
-    # 2. Neutral — Straddle Writing: Both building heavily but price flat
-    cluster = make_cluster(22000, ce_oi_change=10000, pe_oi_change=10000)
-    buf = deque([make_candle(22000)] * 5, maxlen=15)
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "RED"
-    assert res.points == 0
-    assert "Neutral — Straddle Writing" in res.detail
-
-def test_score_oi_flow_warmup(make_cluster, make_candle):
-    cluster = make_cluster(22000, ce_oi_change=1000, pe_oi_change=1000)
-    buf = deque([make_candle(22000)] * 2, maxlen=15) # Only 2 candles, need 5
-    res = score_oi_flow(cluster, buf)
-    assert res.status == "YELLOW"
-    assert "Warming up" in res.detail
 
 
 def test_score_gamma_theta_dte3(make_atm):

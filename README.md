@@ -6,19 +6,25 @@ It does **not** generate trade signals. Instead, it acts as a live weather repor
 
 ---
 
-## 📈 Market Trend Phases
+## 📊 Greeks-Aware Scoring Engine (Condition 3)
 
-Kairos implements a 5-phase trend classification system that correlates relative price change with At-The-Money (ATM) Open Interest flow over a 5-minute rolling window. This provides deeper context beyond just "Bullish" or "Bearish" conviction.
+The core conviction engine (Condition 3: OI Flow) has been upgraded from a simple delta classifier to a professional-grade **Greeks-Aware Scoring Engine**. It now evaluates institutional positioning using:
+
+- **GEX (Gamma Exposure)**: Identifies dealer pins vs trending environments.
+- **NDE (Net Delta Exposure)**: Confirms price momentum against chain delta bias.
+- **Vega Trap Detection**: Protects buyers from entering "expensive" premiums during IV contraction.
+- **Theta Burn Rate**: Detects rangebound "premiums sinks" dominated by option writers.
+
+### Market Trend Phases
+While the underlying **Trend Phase** (Price Δ vs OI Δ) is still calculated, it is now cross-verified against the Greeks above. Points are only awarded if ALL rules align.
 
 | Phase | Price Δ | OI Δ | Interpretation |
 |---|---|---|---|
 | **Long Buildup 🟢** | Positive | Positive | Fresh buying; strong bullish conviction. |
-| **Short Covering 🔵** | Positive | Negative | Sellers exiting; technical rally/bounce. |
+| **Short Covering 🔵** | Positive | Negative | Sellers exiting; rally/pullback (Not Traded). |
 | **Short Buildup 🔴** | Negative | Positive | Fresh selling; strong bearish conviction. |
-| **Long Unwinding 🟠**| Negative | Negative | Buyers exiting; profit booking or capitulation. |
-| **Neutral 🟡** | Varied | < Threshold | Consolidation or low participation. |
-
-*Note: The default threshold is set to 5,000 ATM OI (CE+PE) as defined in `config.py`.*
+| **Long Unwinding 🟠**| Negative | Negative | Buyers exiting; profit booking (Not Traded). |
+| **Neutral 🟡** | Varied | < Thresh | Consolidation or writer-dominated market. |
 
 ---
 

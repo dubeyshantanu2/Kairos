@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Greeks-Aware OI Flow Scoring Engine (`processor.py`, `engine.py`):**
+  - Upgraded Condition 3 from a simple delta classifier to a professional-grade scoring system.
+  - Integrated **GEX (Gamma Exposure)** and **NDE (Net Delta Exposure)** to capture institutional hedging and conviction.
+  - Implemented **Vega Trap detection** to prevent aggressive entries into contracting IV (ADR-018).
+  - Added priority-based rule ordering: Vega Trap > NDE Alignment > GEX Pin > Combined Conviction.
+  - Integrated **PCR (Put-Call Ratio)** and **Theta Dominance** as secondary conviction filters.
+  - Updated Discord notifier to report these advanced metrics in detail strings.
 - **15-Minute Post-Lunch Warmup Window (`scheduler.py`):**
   - The system now automatically starts fetching and buffering data 15 minutes before the official start of Session 2 (at 12:45 IST).
   - This warmup window is **exclusive to Session 2**; Session 1 continues to start exactly at the official market open (09:15 IST) as pre-market data is unavailable.

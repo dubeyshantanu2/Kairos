@@ -20,6 +20,7 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-015 | Granular Condition & Status Alerting | 2026-04-15 | Active |
 | ADR-016 | Trend Phase-Driven OI Flow Scoring | 2026-04-15 | Active |
 | ADR-017 | Sustained OI Window & Noise Reduction | 2026-04-15 | Active |
+| ADR-018 | Greeks-Aware OI Flow Scoring Engine | 2026-04-22 | Active |
 
 
 

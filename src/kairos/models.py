@@ -5,8 +5,18 @@ No business logic here — only structure and validation.
 """
 
 from datetime import date, datetime
+from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, ConfigDict, field_validator
+
+
+class TrendPhase(str, Enum):
+    """Market trend phases derived from price action vs OI flow."""
+    LONG_BUILDUP = "Long Buildup"
+    SHORT_BUILDUP = "Short Buildup"
+    SHORT_COVERING = "Short Covering"
+    LONG_UNWINDING = "Long Unwinding"
+    NEUTRAL = "Neutral"
 
 
 class OptionChainRow(BaseModel):
@@ -124,7 +134,7 @@ class ATMStrikes(BaseModel):
 class StrikeCluster(BaseModel):
     """
     ATM + wings (±7 strikes) for the current snapshot.
-    Used for multi-strike OI Flow and Trend Phase detection.
+    Used for multi-strike OI Flow, Trend Phase detection, and Greeks aggregation.
     """
     model_config = ConfigDict(frozen=False)
 
@@ -132,9 +142,53 @@ class StrikeCluster(BaseModel):
     spot_price: float
     ce_cluster: list[OptionChainRow]
     pe_cluster: list[OptionChainRow]
-    
+
     total_ce_oi_change: int = 0
     total_pe_oi_change: int = 0
+
+    # ── Greeks aggregates (computed by compute_greeks_aggregates) ─────────
+    price_change: float = 0.0
+    # Spot delta for phase classification. Computed upstream in evaluate().
+
+    net_delta_exposure: float = 0.0
+    # Σ W_i × (ce_delta_i × ce_oi_i + pe_delta_i × pe_oi_i)
+    # pe_delta is already negative from Dhan — no sign flip.
+
+    net_gex: float = 0.0
+    # Σ W_i × (ce_gamma_i × ce_oi_i - pe_gamma_i × pe_oi_i) × LOT_SIZE
+    # Positive = dealers net long gamma = PIN. Negative = TREND.
+
+    atm_vega_exposure: float = 0.0
+    # Σ W_i × (ce_vega_i × ce_oi_i + pe_vega_i × pe_oi_i)
+    # ATM ± VEGA_WINDOW only.
+
+    theta_burn_rate: float = 0.0
+    # Σ W_i × (|ce_theta_i| × ce_oi_i + |pe_theta_i| × pe_oi_i)
+    # Uses abs() — Dhan returns theta as negative.
+
+    pcr: float = 1.0
+    # Σ pe_oi / Σ ce_oi across ATM ± STRIKE_WINDOW (unweighted).
+
+    iv_skew: float = 0.0
+    # avg(pe_iv) - avg(ce_iv) across ATM ± VEGA_WINDOW.
+
+    pe_unwind_above_spot: bool = False
+    # True if ANY PE strike ABOVE spot has intraday OI delta < -8%.
+
+    ce_unwind_below_spot: bool = False
+    # True if ANY CE strike BELOW spot has intraday OI delta < -8%.
+
+    ce_wall_strike: Optional[float] = None
+    # Strike with highest total CE OI (resistance wall).
+
+    ce_wall_oi_cr: Optional[float] = None
+    # CE wall OI in Crore (raw OI / 10_000_000).
+
+    pe_wall_strike: Optional[float] = None
+    # Strike with highest total PE OI (support wall).
+
+    pe_wall_oi_cr: Optional[float] = None
+    # PE wall OI in Crore.
 
 
 class ConditionResult(BaseModel):
@@ -159,6 +213,29 @@ class ConditionResult(BaseModel):
         return v
 
 
+class OIFlowResult(BaseModel):
+    """
+    Rich output from the upgraded Condition 3 (OI Flow) scorer.
+    Carries all Greeks-derived signals for Discord formatting and diagnostics.
+    """
+    model_config = ConfigDict(frozen=False)
+
+    score: int                                 # 0 or 1
+    phase: TrendPhase                          # classified trend phase
+    reason: str                                # 1-line human-readable reason
+    gex_state: str                             # "pin" | "trend" | "neutral"
+    nde_state: str                             # "confirms" | "contradicts" | "neutral"
+    vega_trap: bool
+    pcr: float
+    iv_skew: float
+    ce_wall_strike: Optional[float] = None
+    ce_wall_oi_cr: Optional[float] = None
+    pe_wall_strike: Optional[float] = None
+    pe_wall_oi_cr: Optional[float] = None
+    pe_unwind_above_spot: bool = False
+    ce_unwind_below_spot: bool = False
+
+
 class EnvironmentScore(BaseModel):
     """
     Full scored output of one evaluation cycle.
@@ -178,6 +255,7 @@ class EnvironmentScore(BaseModel):
     total_ce_oi_change: int = 0           # Aggregate CE OI change across cluster
     total_pe_oi_change: int = 0           # Aggregate PE OI change across cluster
     conditions: list[ConditionResult]     # all 7 condition results
+    oi_flow_result: Optional[OIFlowResult] = None  # Rich C3 output for Discord formatting
     summary_raw: str                      # Python-generated template string
     summary: str = ""                     # Gemini-polished (filled by Discord Orchestrator)
     previous_status: Optional[str] = None # previous cycle's status for change detection

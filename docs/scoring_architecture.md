@@ -36,24 +36,36 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🟢 Green (1 Pt):** Range > 0.30% **AND** Volume Spiked **AND** Trend >= 4/5 candles uniform.
 * **🔴 Red (0 Pts):** Range < 0.15% **OR** Trend <= 2/5 candles (heavy chop).
 
-### Condition 3: At-The-Money (ATM) Open Interest Flow
+### Condition 3: ATM OI Flow (Greeks-Aware Scoring Engine)
 **Weight:** 1 Point | **Time Parameter:** 5-Minute Rolling Window (ADR-010)
-**Logic:** Gauges institutional conviction by tracking ATM CE/PE building or unwinding, while classifying the broader market trend phase.
-* **Data Source:** Live ATM CE & PE Option Rows. Deltas are calculated over a 5-minute rolling window to filter out single-cycle noise.
-* **Conviction Scoring:**
-  - **🟢 Green (1 Pt):** Unified conviction. CE Building + PE Unwinding (Bearish) OR PE Building + CE Unwinding (Bullish).
-  - **🟡 Yellow (0 Pts):** Mild bias. Only one side showing significant movement.
-  - **🔴 Red (0 Pts):** Mixed signals. Both sides building (Straddle writing) or both unwinding (Uncertainty).
+**Logic:** A full-chain evaluation that cross-verifies price action phases against institutional positioning (GEX, NDE, Vega). It ensures that premium momentum is backed by unified institutional conviction rather than retail-driven noise or dealer hedging.
 
-#### Market Trend Phases (ADR-014)
-The engine correlates Price Δ with total ATM OI Δ (CE+PE) over the lookback period to output one of 5 phases in the alert detail:
-| Phase | Logic | Interpretation |
+#### Evaluation Logic (Priority-Ordered)
+The engine evaluates the following metrics in a strict hierarchy. If any high-priority "AVOID" rule is triggered, the final score for this condition is **RED (0 Pts)** regardless of the trend phase.
+
+1.  **Vega Trap Gate (Rule B):**
+    *   **Trigger:** High ATM Vega Exposure + Contracting IV Rate.
+    *   **Result:** 🔴 RED (0 Pts). Protects against buying options into "implied volatility crush."
+2.  **NDE Alignment (Rule C):**
+    *   **Check:** Does the Net Delta Exposure (NDE) of the strike cluster align with the price action?
+    *   **Contradiction:** Spot ↑ while NDE is short-heavy, or Spot ↓ while NDE is long-heavy.
+    *   **Result:** 🔴 RED (0 Pts). Indicates institutional hedging or "trapped" retail positioning.
+3.  **GEX Pin Status (Rule A):**
+    *   **Trigger:** Net Gamma Exposure (GEX) exceeds the "Pin Threshold."
+    *   **Result:** 🔴 RED (0 Pts). Dealers are absorbing moves; high probability of a rangebound "pin" at the strike.
+4.  **Theta Dominance:**
+    *   **Trigger:** High Theta Burn Rate WITHOUT confirming NDE momentum.
+    *   **Result:** 🔴 RED (0 Pts). Time decay is the dominant force; professional writers are in control.
+5.  **Directional Phase Mapping (Unified Conviction):**
+    *   **GREEN (1 Pt):** Transition to **Long Buildup** or **Short Buildup** verified by **GEX Trend** (dealers amplifying moves) and aligned **PCR**.
+    *   **RED (0 Pts):** Neutral phases, "Straddle Writing" environments, or "Pullback" phases (Short Covering / Long Unwinding).
+
+| Metric | Threshold (Default) | Role |
 |---|---|---|
-| **Long Buildup 🟢** | Price ↑, OI ↑ | Fresh buying; aggressive bullishness. |
-| **Short Covering 🔵**| Price ↑, OI ↓ | Sellers exiting; technical rally. |
-| **Short Buildup 🔴** | Price ↓, OI ↑ | Fresh selling; aggressive bearishness. |
-| **Long Unwinding 🟠**| Price ↓, OI ↓ | Buyers liquidating; profit booking. |
-| **Neutral 🟡** | OI Δ < 5000 | Consolidation or low participation phase. |
+| GEX Area | Trend: -15k | Determines if dealers amplify or suppress moves. |
+| NDE Limit | +/- 10,000 | Verifies delta-neutral vs directional bias. |
+| PCR Bias | Bull: > 0.8 / Bear: < 0.6 | Confirms alignment of the broader chain. |
+| Vega Trap | IV Δ < -0.20% | Prevents entries into IV-contraction zones. |
 
 ### Condition 4: Averaged Gamma/Theta Ratio (DTE-Scaled)
 **Weight:** 1 Point | **Time Parameter:** Days To Expiry (DTE)
