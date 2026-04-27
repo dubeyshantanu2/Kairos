@@ -271,6 +271,9 @@ async def run_cycle() -> None:
             return
         state.startup_done = True
         state.reset_buffers()
+        
+        if not is_active_session():
+            logger.info("Startup complete. Currently outside active session hours. Waiting for market schedule to begin...")
 
     # Config changed (new expiry selected) — reset buffers
     if (
