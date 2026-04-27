@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     session_1_start: tuple[int, int] = (9, 15)
     session_1_end: tuple[int, int] = (11, 45)
     session_2_start: tuple[int, int] = (13, 0)
-    session_2_end: tuple[int, int] = (15, 15)
+    session_2_end: tuple[int, int] = (15, 25)
 
     # ── In-memory buffer sizes ────────────────────────────────────────────
     candle_buffer_size: int = 15   # max candles kept in RAM

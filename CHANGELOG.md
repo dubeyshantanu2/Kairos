@@ -9,6 +9,11 @@ All notable changes to this project will be documented in this file.
   - Added `Dockerfile` allowing for reliable explicit builds on Fly.io using the Hatchling `pyproject.toml` configuration.
   - Added `.dockerignore` to secure image creation and prevent `.env` secrets leakage.
   - Documented deployment process in `README.md` and added architectural decision in `ADR-019`.
+- **Fly.io Scale-to-Zero & Automatic Shutdown**:
+  - Implemented automatic process termination in `scheduler.py` explicitly checking `session_2_end` (extended to 15:25 IST) to allow graceful exit.
+  - Added GitHub Actions cron workflow (`.github/workflows/market-hours.yml`) to scale the Fly.io machine to 1 before market open and down to 0 after market close.
+  - Removed persistent `http_service` from `fly.toml` to support the scale-to-zero behaviour.
+  - Documented decision in `directives/adr/ADR-020_fly_io_scale_to_zero_schedule.md`.
 - **Greeks-Aware OI Flow Scoring Engine (`processor.py`, `engine.py`):**
   - Upgraded Condition 3 from a simple delta classifier to a professional-grade scoring system.
   - Integrated **GEX (Gamma Exposure)** and **NDE (Net Delta Exposure)** to capture institutional hedging and conviction.

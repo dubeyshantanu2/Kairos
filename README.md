@@ -127,6 +127,11 @@ The engine can be easily deployed to [Fly.io](https://fly.io) using the included
    flyctl deploy
    ```
 
+**Note on Cost Optimization (Scale-to-Zero):**
+The repository includes a GitHub Action (`.github/workflows/market-hours.yml`) that automatically scales the Fly.io machine to 1 before market open and down to 0 after market close. To enable this:
+1. Generate a Fly Deploy Token: `flyctl tokens create deploy -x 999999h`
+2. Add it as a GitHub Repository Secret named `FLY_API_TOKEN`.
+
 ### 6. Direct CLI Control (Bypass Discord)
 For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.
 ```bash

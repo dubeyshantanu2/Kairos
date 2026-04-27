@@ -295,6 +295,14 @@ async def run_cycle() -> None:
             state.in_session = False
             await notifier.post_session_boundary(entering=False, session_name="session")
 
+        # Exit process if it's past the final session end time (Market Close)
+        now = datetime.now(IST)
+        if (now.hour, now.minute) >= settings.session_2_end:
+            logger.info("Market close reached. Shutting down for the day.")
+            # Give time for the boundary message to be sent
+            await asyncio.sleep(2)
+            sys.exit(0)
+
         # Fire lunch break alert once when we enter the gap between sessions
         if is_lunch_break() and not state.lunch_break_alert_sent:
             state.lunch_break_alert_sent = True
