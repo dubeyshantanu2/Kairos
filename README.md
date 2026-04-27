@@ -122,15 +122,19 @@ The engine can be easily deployed to [Fly.io](https://fly.io) using the included
    ```bash
    cat .env | flyctl secrets import
    ```
-4. Deploy the application:
+4. **CRITICAL STEP - Remove HTTP Proxy:** Open your newly generated `fly.toml`. You MUST manually delete the entire `[http_service]` or `[[services]]` block. 
+   > [!WARNING]
+   > Fly.io automatically adds an `[http_service]` block with `auto_start_machines = true`. If you leave this in, random internet bots port-scanning your public IP will wake your machine up in the middle of the night! Kairos is a background worker, not a web server.
+5. Deploy the application:
    ```bash
    flyctl deploy
    ```
 
 **Note on Cost Optimization (Scale-to-Zero):**
-The repository includes a GitHub Action (`.github/workflows/market-hours.yml`) that automatically scales the Fly.io machine to 1 before market open and down to 0 after market close. To enable this:
+To ensure the bot only runs during market hours (to save Fly.io compute credits), the repository includes a GitHub Action (`.github/workflows/market-hours.yml`). This uses a cron job to automatically scale the Fly.io machine to 1 before market open and down to 0 after market close. 
+To enable this automation:
 1. Generate a Fly Deploy Token: `flyctl tokens create deploy -x 999999h`
-2. Add it as a GitHub Repository Secret named `FLY_API_TOKEN`.
+2. Add it as a GitHub Repository Secret named `FLY_API_TOKEN` under Settings > Secrets and variables > Actions.
 
 ### 6. Direct CLI Control (Bypass Discord)
 For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.

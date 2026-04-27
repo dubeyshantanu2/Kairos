@@ -21,6 +21,8 @@ We implemented a two-part scale-to-zero strategy:
 ## Rationale
 Fly.io supports auto-start/auto-stop primarily for HTTP applications via its proxy mechanism. Since Kairos is a background worker (no HTTP traffic, just an autonomous polling loop reporting outbound to Discord), it cannot be natively scaled to zero via HTTP wake-ups. 
 
+**Critical Learning (Night-Time False Awakenings):** If an `[http_service]` block with `auto_start_machines = true` (the Fly default) is left in the `fly.toml`, any random internet traffic scaling or port-scanning the public IP will artificially wake the machine up outside of market hours! Therefore, the entire `[http_service]` block MUST be removed to enforce strict adherence to the GitHub Actions cron schedule.
+
 By having the process gracefully terminate itself post-market and utilizing GitHub Actions cron triggers to instruct the Fly.io API to provision compute, we achieve highly predictable and robust infrastructure scaling explicitly decoupled from complex auto-scaling mechanisms.
 
 ## Alternatives Considered
