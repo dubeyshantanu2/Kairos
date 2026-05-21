@@ -56,15 +56,15 @@ def _format_oi_flow_line(r: OIFlowResult) -> str:
     phase_str = f"{r.phase.value} {_PHASE_EMOJI.get(r.phase.value, '🟡')}"
 
     gex_token = {
-        "pin":     "GEX pin ⚠️",
-        "trend":   "GEX trend ✓",
-        "neutral": "GEX neutral",
+        "pin":     "GEX pin 🔴",
+        "trend":   "GEX trend 🟢",
+        "neutral": "GEX neutral 🟡",
     }[r.gex_state]
 
     nde_token = {
-        "confirms":    "NDE confirms ✓",
-        "contradicts": "NDE contra ✗",
-        "neutral":     "NDE ambiguous",
+        "confirms":    "NDE confirms 🟢",
+        "contradicts": "NDE contra 🔴",
+        "neutral":     "NDE ambiguous 🟡",
     }[r.nde_state]
 
     vega_token = " | Vega trap 🔥" if r.vega_trap else ""
