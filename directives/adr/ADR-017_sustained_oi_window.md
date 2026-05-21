@@ -23,8 +23,14 @@ The system currently alerts on every minute fluctuation in condition values (per
 - `src/kairos/scheduler.py`: Refactor `conditions_changed` logic to compare status and phase labels.
 
 ## Definition of Done
-- [ ] No Discord alerts for minor digit changes in condition values.
-- [ ] Discord alerts successfully triggered for Color/Emoji changes.
-- [ ] Discord alerts successfully triggered for OI Phase changes (e.g., Neutral → Long Buildup).
-- [ ] OI math verified to use T-5 as the baseline.
-- [ ] Tests updated and passing.
+- [x] No Discord alerts for minor digit changes in condition values.
+- [x] Discord alerts successfully triggered for Color/Emoji changes.
+- [x] Discord alerts successfully triggered for OI Phase changes (e.g., Neutral → Long Buildup).
+- [x] OI math verified to use T-5 as the baseline.
+- [x] Tests updated and passing.
+
+## Amendment (2026-05-21)
+The rolling 5-minute window caused "window exit" flutter, sending repeated Discord alerts when heavy volume spikes exited the window. To mimic broker charting for buildup, the OI baseline now uses a **15-Minute Anchored Window**.
+1. Baseline snapshots are taken at the 15-minute marks (e.g. 14:00, 14:15, 14:30).
+2. For the duration of the 15-minute block, the buildup delta is continuously calculated relative to the anchor.
+3. Discord alerts for OI Phase shifts are gated strictly to the 15-minute interval boundaries.

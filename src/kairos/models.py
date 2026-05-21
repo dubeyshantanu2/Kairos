@@ -190,6 +190,10 @@ class StrikeCluster(BaseModel):
     pe_wall_oi_cr: Optional[float] = None
     # PE wall OI in Crore.
 
+    total_abs_gex: float = 0.0
+    total_abs_nde: float = 0.0
+    total_abs_vega: float = 0.0
+
 
 class ConditionResult(BaseModel):
     """

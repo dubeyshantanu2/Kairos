@@ -118,6 +118,9 @@ def compute_greeks_aggregates(
     total_gex = 0.0
     total_theta = 0.0
     total_vega = 0.0
+    total_abs_nde = 0.0
+    total_abs_gex = 0.0
+    total_abs_vega = 0.0
     total_ce_oi = 0  # unweighted for PCR
     total_pe_oi = 0  # unweighted for PCR
     ce_iv_list: list[float] = []
@@ -153,8 +156,12 @@ def compute_greeks_aggregates(
         if w > 0:
             # NDE: delta × OI (pe_delta already negative)
             total_nde += w * (ce_delta * ce_oi + pe_delta * pe_oi)
+            total_abs_nde += abs(w * ce_delta * ce_oi) + abs(w * pe_delta * pe_oi)
+            
             # GEX: (ce_gamma × ce_oi - pe_gamma × pe_oi) × lot_size
             total_gex += w * (ce_gamma * ce_oi - pe_gamma * pe_oi) * lot_size
+            total_abs_gex += (w * ce_gamma * ce_oi * lot_size) + (w * pe_gamma * pe_oi * lot_size)
+            
             # Theta burn: abs(theta) × OI
             total_theta += w * (abs(ce_theta) * ce_oi + abs(pe_theta) * pe_oi)
             # PCR accumulators (unweighted)
@@ -168,6 +175,7 @@ def compute_greeks_aggregates(
             vega_distance = abs(strike - atm_strike) / strike_step
             if vega_distance <= vega_window:
                 total_vega += w * (ce_vega * ce_oi + pe_vega * pe_oi)
+                total_abs_vega += abs(w * ce_vega * ce_oi) + abs(w * pe_vega * pe_oi)
                 if ce_iv > 0:
                     ce_iv_list.append(ce_iv)
                 if pe_iv > 0:
@@ -211,6 +219,9 @@ def compute_greeks_aggregates(
         "ce_wall_oi_cr": ce_wall_oi_cr,
         "pe_wall_strike": float(pe_wall_strike) if pe_wall_strike is not None else None,
         "pe_wall_oi_cr": pe_wall_oi_cr,
+        "total_abs_gex": total_abs_gex,
+        "total_abs_nde": total_abs_nde,
+        "total_abs_vega": total_abs_vega,
     }
 
 

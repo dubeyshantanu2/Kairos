@@ -38,3 +38,11 @@ This upgrade aligns the scoring engine with professional derivatives desk logic.
 - [x] Priority ordering correctly implemented (Vega Trap > NDE > GEX).
 - [x] Unit tests in `tests/test_oi_flow.py` pass with 100% coverage for new logic.
 - [x] Documentation updated in `README.md` and `scoring_architecture.md`.
+
+## Amendment (2026-05-21)
+The hardcoded thresholds for GEX (1.3M), NDE (400k), and Vega (25M) caused the metrics to fail silently or get stuck on "Neutral" during low-volume days or when switching to lower lot-size indices like Sensex. 
+To resolve this, the Greeks-Aware engine has been migrated to **Dynamic Percentage Thresholds**:
+1. `total_abs_gex`, `total_abs_nde`, and `total_abs_vega` are calculated across the chain.
+2. GEX Pin/Trend triggers if net GEX > 20% of `total_abs_gex`.
+3. NDE Contradicts/Confirms triggers if NDE > 20% of `total_abs_nde`.
+4. Vega Trap triggers if ATM Vega > 40% of `total_abs_vega`.

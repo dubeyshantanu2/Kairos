@@ -37,7 +37,7 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🔴 Red (0 Pts):** Range < 0.15% **OR** Trend <= 2/5 candles (heavy chop).
 
 ### Condition 3: ATM OI Flow (Greeks-Aware Scoring Engine)
-**Weight:** 1 Point | **Time Parameter:** 5-Minute Rolling Window (ADR-010)
+**Weight:** 1 Point | **Time Parameter:** 15-Minute Anchored Baseline (Mimics broker buildup candles)
 **Logic:** A full-chain evaluation that cross-verifies price action phases against institutional positioning (GEX, NDE, Vega). It ensures that premium momentum is backed by unified institutional conviction rather than retail-driven noise or dealer hedging.
 
 #### Evaluation Logic (Priority-Ordered)
@@ -60,12 +60,12 @@ The engine evaluates the following metrics in a strict hierarchy. If any high-pr
     *   **GREEN (1 Pt):** Transition to **Long Buildup** or **Short Buildup** verified by **GEX Trend** (dealers amplifying moves) and aligned **PCR**.
     *   **RED (0 Pts):** Neutral phases, "Straddle Writing" environments, or "Pullback" phases (Short Covering / Long Unwinding).
 
-| Metric | Threshold (Default) | Role |
+| Metric | Threshold (Dynamic Default) | Role |
 |---|---|---|
-| GEX Area | Trend: -15k | Determines if dealers amplify or suppress moves. |
-| NDE Limit | +/- 10,000 | Verifies delta-neutral vs directional bias. |
-| PCR Bias | Bull: > 0.8 / Bear: < 0.6 | Confirms alignment of the broader chain. |
-| Vega Trap | IV Δ < -0.20% | Prevents entries into IV-contraction zones. |
+| GEX Area | > 20% of Total Absolute Chain GEX | Determines if dealers pin (absorb) or trend (amplify) moves. |
+| NDE Limit | > 20% of Total Absolute Chain NDE | Verifies directional bias and checks for trapped positioning. |
+| PCR Bias | Bull: > 1.05 / Bear: < 0.95 | Confirms alignment of the broader chain sentiment. |
+| Vega Trap | > 40% of Total Chain Vega + IV Δ < 0 | Prevents entries into aggressive IV-contraction (theta trap) zones. |
 
 ### Condition 4: Averaged Gamma/Theta Ratio (DTE-Scaled)
 **Weight:** 1 Point | **Time Parameter:** Days To Expiry (DTE)

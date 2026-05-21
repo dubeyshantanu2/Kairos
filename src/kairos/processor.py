@@ -240,29 +240,36 @@ def score_oi_flow(
     phase_is_neutral = phase == TrendPhase.NEUTRAL
 
     # ── STEP 2: GEX gate ────────────────────────────────────────────────
-    if cluster.net_gex > settings.gex_pin_threshold:
+    gex_threshold = cluster.total_abs_gex * settings.gex_pin_pct
+    if gex_threshold > 0 and cluster.net_gex > gex_threshold:
         gex_state = "pin"
-    elif cluster.net_gex < -settings.gex_trend_threshold:
+    elif gex_threshold > 0 and cluster.net_gex < -gex_threshold:
         gex_state = "trend"
     else:
         gex_state = "neutral"
 
     # ── STEP 3: NDE alignment ───────────────────────────────────────────
     nde = cluster.net_delta_exposure
-    if phase_is_bearish and nde < -settings.nde_threshold:
-        nde_state = "confirms"
-    elif phase_is_bullish and nde > settings.nde_threshold:
-        nde_state = "confirms"
-    elif phase_is_bearish and nde > settings.nde_threshold:
-        nde_state = "contradicts"
-    elif phase_is_bullish and nde < -settings.nde_threshold:
-        nde_state = "contradicts"
+    nde_threshold = cluster.total_abs_nde * settings.nde_pct_threshold
+    
+    if nde_threshold > 0:
+        if phase_is_bearish and nde < -nde_threshold:
+            nde_state = "confirms"
+        elif phase_is_bullish and nde > nde_threshold:
+            nde_state = "confirms"
+        elif phase_is_bearish and nde > nde_threshold:
+            nde_state = "contradicts"
+        elif phase_is_bullish and nde < -nde_threshold:
+            nde_state = "contradicts"
+        else:
+            nde_state = "neutral"
     else:
         nde_state = "neutral"
 
     # ── STEP 4: Vega trap ───────────────────────────────────────────────
     vega_trap = (
-        cluster.atm_vega_exposure > settings.vega_high_threshold
+        cluster.total_abs_vega > 0
+        and cluster.atm_vega_exposure > (cluster.total_abs_vega * settings.vega_high_pct)
         and iv_change_rate < settings.vega_trap_iv_threshold
     )
 

@@ -72,6 +72,17 @@ def make_atm(make_option_row):
 def make_cluster():
     def _make(spot_price, ce_oi_change=0, pe_oi_change=0, **kwargs):
         atm_strike = round(spot_price / 50) * 50
+        
+        # Provide base values so percentage-based checks pass for legacy tests
+        defaults = {
+            "total_abs_gex": 6_000_000.0,     # 20% = 1.2M, tests use +/- 2M
+            "total_abs_nde": 2_000_000.0,     # 20% = 400k, tests use +/- 500k
+            "total_abs_vega": 60_000_000.0,   # 40% = 24M, tests use 30M
+        }
+        for k, v in defaults.items():
+            if k not in kwargs:
+                kwargs[k] = v
+                
         return StrikeCluster(
             atm_strike=atm_strike,
             spot_price=spot_price,

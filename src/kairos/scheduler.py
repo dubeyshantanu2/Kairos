@@ -37,8 +37,10 @@ class SessionState:
         self.candle_buffer: deque = deque(maxlen=settings.candle_buffer_size)
         self.iv_buffer: deque = deque(maxlen=settings.iv_buffer_size)
 
-        # OI snapshot buffer for multi-cycle delta (5-minute lookback)
-        self.oi_snapshot_buffer: deque[dict[tuple[int, str], int]] = deque(maxlen=settings.oi_lookback_cycles)
+        # OI anchor snapshot (15-minute fixed windows)
+        self.oi_anchor_snapshot: dict[tuple[int, str], int] = {}
+        self.anchor_block: int = -1
+        self.last_alerted_oi_phase: Optional[str] = None
 
         # Session tracking
         self.active_config: Optional[SessionConfig] = None
@@ -70,7 +72,9 @@ class SessionState:
         """Reset all in-memory state when a new session starts."""
         self.candle_buffer.clear()
         self.iv_buffer.clear()
-        self.oi_snapshot_buffer = deque(maxlen=settings.oi_lookback_cycles)
+        self.oi_anchor_snapshot = {}
+        self.anchor_block = -1
+        self.last_alerted_oi_phase = None
         self.cycle_count = 0
         self.warmup_complete = False
         self.previous_status = None
@@ -331,29 +335,21 @@ async def run_cycle() -> None:
             fetcher.get_latest_candle(config.symbol),
         )
 
-        # Calculate multi-cycle OI delta (5-minute lookback per ADR-010 revision)
-        # This reduces noise from 1-min fluctuations and detects sustained conviction.
-        if state.oi_snapshot_buffer:
-            # Compare against the oldest available snapshot in the rolling buffer.
-            # If buffer size is 5, this is exactly the OI from 5 minutes ago.
-            baseline = state.oi_snapshot_buffer[0]
-            for row in option_chain:
-                key = (row.strike, row.option_type)
-                if key in baseline:
-                    row.oi_change = row.oi - baseline[key]
-                else:
-                    # New strike appears (not in baseline) — default to 0 delta
-                    row.oi_change = 0  
-        else:
-            # First cycle of session: we have no buffer history.
-            # Fall back to Dhan's 'previous_oi' which represents the daily delta.
-            for row in option_chain:
-                row.oi_change = row.oi - row.previous_oi
+        # Calculate 15-minute anchored OI delta (Mimics broker buildup)
+        now_minute = datetime.now(IST).minute
+        current_15m_block = now_minute // 15
+        
+        if state.anchor_block != current_15m_block:
+            # New 15-minute candle starting — set the anchor
+            state.oi_anchor_snapshot = {(r.strike, r.option_type): r.oi for r in option_chain}
+            state.anchor_block = current_15m_block
 
-        # Push current snapshot into the rolling buffer
-        state.oi_snapshot_buffer.append(
-            {(r.strike, r.option_type): r.oi for r in option_chain}
-        )
+        for row in option_chain:
+            key = (row.strike, row.option_type)
+            if key in state.oi_anchor_snapshot:
+                row.oi_change = row.oi - state.oi_anchor_snapshot[key]
+            else:
+                row.oi_change = 0
 
         state.last_fetch_time = datetime.now(IST)
         if state.api_warning_sent:
@@ -477,6 +473,12 @@ async def run_cycle() -> None:
 
     # Detect significant changes: Status, Color, or OI Phase shifts (ADR-017)
     significant_change = False
+    current_oi_phase = None
+
+    for c in score.conditions:
+        if c.name == "oi_flow":
+            current_oi_phase = c.detail.split('|')[0].strip() if '|' in c.detail else c.detail
+
     if state.previous_conditions:
         if len(state.previous_conditions) != len(score.conditions):
             significant_change = True
@@ -485,15 +487,12 @@ async def run_cycle() -> None:
                 # Rule 1: Always alert if the Color (Status) of any condition changes
                 if old_c.status != new_c.status:
                     significant_change = True
-                    break
-                
-                # Rule 2: For OI Flow, alert if the Phase label changes (ignore raw number jitter)
-                if new_c.name == "oi_flow":
-                    old_phase = old_c.detail.split('|')[0].strip() if '|' in old_c.detail else old_c.detail
-                    new_phase = new_c.detail.split('|')[0].strip() if '|' in new_c.detail else new_c.detail
-                    if old_phase != new_phase:
-                        significant_change = True
-                        break
+            
+            # Rule 2: For OI Flow, alert if the Phase changes at the 15-minute mark
+            now_minute = datetime.now(IST).minute
+            if current_oi_phase and state.last_alerted_oi_phase:
+                if current_oi_phase != state.last_alerted_oi_phase and now_minute % 15 == 0:
+                    significant_change = True
     elif score.conditions:
         significant_change = True  # First cycle with scoring data
 
@@ -504,6 +503,9 @@ async def run_cycle() -> None:
                 f"(score {score.score}/8)"
             )
         
+        if current_oi_phase:
+            state.last_alerted_oi_phase = current_oi_phase
+
         # Post environment alert for significant shifts
         await notifier.post_environment_alert(score)
 

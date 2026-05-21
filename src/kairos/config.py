@@ -104,21 +104,14 @@ class Settings(BaseSettings):
     # ATM ± N strikes for vega exposure and IV skew.
     # Tighter window because vega concentrates near ATM.
 
-    gex_pin_threshold: float = 1_300_000.0
-    # net_gex above this → dealers net long gamma → PIN ACTIVE → range.
-    # Scoring impact: caps Condition 3 score at 0 (Rule A).
+    gex_pin_pct: float = 0.20
+    # |net_gex| > total_abs_gex * 0.20 -> pin/trend
 
-    gex_trend_threshold: float = 1_300_000.0
-    # |net_gex| below negative side of this → dealers net short gamma →
-    # TRENDING ACTIVE → amplifying environment for options buyers.
+    nde_pct_threshold: float = 0.20
+    # |nde| > total_abs_nde * 0.20 -> confirms/contradicts
 
-    nde_threshold: float = 400_000.0
-    # Net Delta Exposure threshold for directional confirmation/contradiction.
-    # If NDE contradicts phase direction and exceeds this → score=0 (Rule C).
-
-    vega_high_threshold: float = 25_000_000.0
-    # atm_vega_exposure above this = significant vega concentration.
-    # Used with vega_trap_iv_threshold to detect vega trap.
+    vega_high_pct: float = 0.40
+    # atm_vega_exposure > total_abs_vega * 0.40 -> vega trap
 
     vega_trap_iv_threshold: float = 0.0
     # iv_change_rate must be BELOW this for vega trap to activate.

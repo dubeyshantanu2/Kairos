@@ -110,7 +110,7 @@ async def test_run_cycle_oi_delta_new_strike(mock_deps, mocker):
     sched.db.get_active_session.return_value = sched.state.active_config
     
     # Baseline has strike 22000
-    sched.state.oi_snapshot_buffer.append({(22000, "CE"): 1000})
+    sched.state.oi_anchor_snapshot = {(22000, "CE"): 1000}
     
     # New row has strike 22050
     from kairos.models import OptionChainRow
