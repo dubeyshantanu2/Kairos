@@ -8,7 +8,7 @@ The Kairos Python Engine needs to be deployed to a headless VPS environment. Fly
 ## Decision
 We elected to explicitly define the application environment using a standard Dockerfile rather than relying on Fly.io's auto-detection mechanisms. 
 
-- Created a `Dockerfile` using `python:3.11-slim` as the base image.
+- Created a `Dockerfile` using `python:3.14-slim` as the base image.
 - Installed the project and its dependencies via `pip install --no-cache-dir .` to utilize the existing `pyproject.toml` (hatchling build system).
 - Set the entry point to `CMD ["python", "-m", "kairos.scheduler"]`, which mirrors the exact execution command used in the existing local Systemd service file (`kairos.service`).
 - Added a `.dockerignore` file to prevent local artifacts (`.venv`, `__pycache__`, `.env`) from bloating the image or leaking secrets.

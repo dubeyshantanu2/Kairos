@@ -75,7 +75,7 @@ If you are expanding this repository or integrating the orchestrator, please rev
 If you are running the Kairos engine locally for development or testing:
 
 ### 1. Installation
-This repository uses `pyproject.toml` standards. Ensure you have Python 3.10+ installed.
+This repository uses `pyproject.toml` standards. Ensure you have Python 3.11+ installed.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
