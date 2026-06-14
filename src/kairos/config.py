@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     oi_multi_strike_count: int = 7     # number of strikes on each side of ATM (7 up + 7 down + 1 ATM = 15 total)
     trend_phase_oi_threshold: int = 8000 # min WEIGHTED MEAN OI change across cluster to register buildup/unwinding
 
+    # ── Condition 3: OI Flow Consensus Filter (ADR-021) ──────────────────
+    oi_consensus_window: int = 8
+    oi_consensus_green_threshold: int = 5
+    oi_consensus_trap_threshold: int = 3
+
     # ── OI Flow (Condition 3) — Full-Chain Greeks Parameters ─────────────
     # These constants power the upgraded Greeks-aware scoring engine.
     # All tuning happens here — no logic changes needed.

@@ -355,10 +355,102 @@ def score_oi_flow(
     )
 
 
+def consolidate_oi_flow(
+    buffer: deque,
+) -> tuple[ConditionResult, OIFlowResult]:
+    """
+    Consolidates the rolling history of OIFlowResult objects (T-0 to T-N)
+    using a consensus voting mechanism (ADR-021).
+    
+    :param buffer: A rolling deque of OIFlowResult objects.
+    :type buffer: collections.deque
+    :return: A tuple of (ConditionResult, OIFlowResult) representing the consolidated output.
+    """
+    if not buffer:
+        # Fallback if buffer is empty
+        fallback_oi = OIFlowResult(
+            score=0,
+            phase=TrendPhase.NEUTRAL,
+            reason="Warming up",
+            gex_state="neutral",
+            nde_state="neutral",
+            vega_trap=False,
+            pcr=1.0,
+            iv_skew=0.0,
+        )
+        fallback_cond = _result("oi_flow", "YELLOW", 0, 1, "Warming up")
+        return fallback_cond, fallback_oi
+
+    # The most recent reading (T-0) carries the latest snapshot values (pcr, skew, walls, etc.)
+    latest = buffer[-1]
+
+    # 1. Count green cycles in the buffer
+    green_count = sum(1 for r in buffer if r.score == 1)
+
+    # 2. Safety overrides: check if traps are active in >= threshold cycles
+    vega_trap_count = sum(1 for r in buffer if r.vega_trap)
+    gex_pin_count = sum(1 for r in buffer if r.gex_state == "pin")
+
+    # 3. Determine consensus phase (mode / most common phase in buffer)
+    phases = [r.phase for r in buffer]
+    # Find unique phases in order of appearance (most recent first)
+    unique_phases = []
+    for p in reversed(phases):
+        if p not in unique_phases:
+            unique_phases.append(p)
+    most_common_phase = max(unique_phases, key=phases.count)
+
+    phase_is_bearish = most_common_phase in (TrendPhase.SHORT_BUILDUP, TrendPhase.LONG_UNWINDING)
+    phase_is_bullish = most_common_phase in (TrendPhase.LONG_BUILDUP, TrendPhase.SHORT_COVERING)
+    phase_is_neutral = most_common_phase == TrendPhase.NEUTRAL
+
+    # Determine final score and reason
+    if vega_trap_count >= settings.oi_consensus_trap_threshold:
+        score_val = 0
+        reason = f"Vega trap active ({vega_trap_count}/{len(buffer)} cycles) — IV contracting into high premium exposure"
+    elif gex_pin_count >= settings.oi_consensus_trap_threshold:
+        score_val = 0
+        reason = f"GEX pin active ({gex_pin_count}/{len(buffer)} cycles) — dealers absorbing moves"
+    elif green_count >= settings.oi_consensus_green_threshold:
+        score_val = 1
+        direction = "bearish" if phase_is_bearish else "bullish"
+        reason = f"Unified {direction} conviction (Consensus {green_count}/{len(buffer)}) — GEX trending, NDE confirms, PCR aligned"
+    else:
+        score_val = 0
+        if phase_is_neutral:
+            reason = f"Neutral phase — low OI participation, no directional conviction ({green_count}/{len(buffer)} green)"
+        elif most_common_phase in (TrendPhase.SHORT_COVERING, TrendPhase.LONG_UNWINDING):
+            reason = f"Pullback phase ({most_common_phase.value}) — avoid trading ({green_count}/{len(buffer)} green)"
+        else:
+            reason = f"Mixed signals — consensus not met ({green_count}/{len(buffer)} green cycles)"
+
+    status = "GREEN" if score_val == 1 else "RED"
+    cond_result = _result("oi_flow", status, score_val, 1, reason)
+
+    consolidated_oi = OIFlowResult(
+        score=score_val,
+        phase=most_common_phase,
+        reason=reason,
+        gex_state=latest.gex_state,
+        nde_state=latest.nde_state,
+        vega_trap=latest.vega_trap,
+        pcr=latest.pcr,
+        iv_skew=latest.iv_skew,
+        ce_wall_strike=latest.ce_wall_strike,
+        ce_wall_oi_cr=latest.ce_wall_oi_cr,
+        pe_wall_strike=latest.pe_wall_strike,
+        pe_wall_oi_cr=latest.pe_wall_oi_cr,
+        pe_unwind_above_spot=latest.pe_unwind_above_spot,
+        ce_unwind_below_spot=latest.ce_unwind_below_spot,
+    )
+
+    return cond_result, consolidated_oi
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Condition 4 — Gamma vs Theta Ratio, DTE-Scaled (max 1 point)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def score_gamma_theta(atm: ATMStrikes, dte: int) -> ConditionResult:
     """

@@ -12,8 +12,8 @@ Tests cover:
 
 from collections import deque
 
-from kairos.models import TrendPhase
-from kairos.processor import score_oi_flow
+from kairos.models import TrendPhase, OIFlowResult
+from kairos.processor import score_oi_flow, consolidate_oi_flow
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -286,3 +286,98 @@ class TestWarmup:
         assert cond.status == "YELLOW"
         assert "Warming up" in cond.detail
         assert oi.phase == TrendPhase.NEUTRAL
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 7. CONSENSUS FILTER TESTS (ADR-021)
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestConsensusFilter:
+    """Consensus voting filter tests."""
+
+    def test_empty_buffer_returns_warmup(self):
+        buf = deque(maxlen=8)
+        cond, oi = consolidate_oi_flow(buf)
+        assert cond.status == "YELLOW"
+        assert "Warming up" in cond.detail
+        assert oi.score == 0
+
+    def test_green_consensus_met(self):
+        buf = deque(maxlen=8)
+        # 5 green, 3 red
+        for _ in range(3):
+            buf.append(OIFlowResult(score=0, phase=TrendPhase.NEUTRAL, reason="No trend", gex_state="neutral", nde_state="neutral", vega_trap=False, pcr=1.0, iv_skew=0.0))
+        for _ in range(5):
+            buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="Green buildup", gex_state="trend", nde_state="confirms", vega_trap=False, pcr=1.1, iv_skew=0.0))
+
+        cond, oi = consolidate_oi_flow(buf)
+        assert cond.status == "GREEN"
+        assert cond.points == 1
+        assert oi.score == 1
+        assert oi.phase == TrendPhase.LONG_BUILDUP
+        assert "Consensus 5/8" in cond.detail
+
+    def test_green_consensus_not_met(self):
+        buf = deque(maxlen=8)
+        # 4 green, 4 red
+        for _ in range(4):
+            buf.append(OIFlowResult(score=0, phase=TrendPhase.NEUTRAL, reason="No trend", gex_state="neutral", nde_state="neutral", vega_trap=False, pcr=1.0, iv_skew=0.0))
+        for _ in range(4):
+            buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="Green buildup", gex_state="trend", nde_state="confirms", vega_trap=False, pcr=1.1, iv_skew=0.0))
+
+        cond, oi = consolidate_oi_flow(buf)
+        assert cond.status == "RED"
+        assert cond.points == 0
+        assert oi.score == 0
+        assert "consensus not met" in cond.detail
+
+    def test_vega_trap_override(self):
+        buf = deque(maxlen=8)
+        # 5 green, but 3 of the red/green cycles have vega trap
+        for _ in range(5):
+            buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="Green", gex_state="trend", nde_state="confirms", vega_trap=False, pcr=1.1, iv_skew=0.0))
+        for _ in range(2):
+            buf.append(OIFlowResult(score=0, phase=TrendPhase.LONG_BUILDUP, reason="Vega trap", gex_state="trend", nde_state="confirms", vega_trap=True, pcr=1.1, iv_skew=0.0))
+        for _ in range(1):
+            buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="Vega trap", gex_state="trend", nde_state="confirms", vega_trap=True, pcr=1.1, iv_skew=0.0))
+        # Total vega_trap = 3. Even though green_count = 6 (could be close to green), vega trap count = 3 forces RED.
+        
+        cond, oi = consolidate_oi_flow(buf)
+        assert cond.status == "RED"
+        assert cond.points == 0
+        assert oi.score == 0
+        assert "Vega trap active (3/8 cycles)" in cond.detail
+
+    def test_gex_pin_override(self):
+        buf = deque(maxlen=8)
+        # 3 gex pins
+        for _ in range(5):
+            buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="Green", gex_state="trend", nde_state="confirms", vega_trap=False, pcr=1.1, iv_skew=0.0))
+        for _ in range(3):
+            buf.append(OIFlowResult(score=0, phase=TrendPhase.LONG_BUILDUP, reason="Gex Pin", gex_state="pin", nde_state="confirms", vega_trap=False, pcr=1.1, iv_skew=0.0))
+
+        cond, oi = consolidate_oi_flow(buf)
+        assert cond.status == "RED"
+        assert cond.points == 0
+        assert oi.score == 0
+        assert "GEX pin active (3/8 cycles)" in cond.detail
+
+    def test_mode_phase_wins(self):
+        buf = deque(maxlen=8)
+        # 3 Long Buildup, 2 Short Buildup, 3 Neutral
+        # To resolve tie, check unique_phases reversed (most recent first wins)
+        buf.append(OIFlowResult(score=0, phase=TrendPhase.NEUTRAL, reason="N", gex_state="n", nde_state="n", vega_trap=False, pcr=1.0, iv_skew=0.0))
+        buf.append(OIFlowResult(score=0, phase=TrendPhase.NEUTRAL, reason="N", gex_state="n", nde_state="n", vega_trap=False, pcr=1.0, iv_skew=0.0))
+        buf.append(OIFlowResult(score=0, phase=TrendPhase.NEUTRAL, reason="N", gex_state="n", nde_state="n", vega_trap=False, pcr=1.0, iv_skew=0.0))
+        
+        buf.append(OIFlowResult(score=1, phase=TrendPhase.SHORT_BUILDUP, reason="S", gex_state="t", nde_state="c", vega_trap=False, pcr=0.9, iv_skew=0.0))
+        buf.append(OIFlowResult(score=1, phase=TrendPhase.SHORT_BUILDUP, reason="S", gex_state="t", nde_state="c", vega_trap=False, pcr=0.9, iv_skew=0.0))
+        
+        buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="L", gex_state="t", nde_state="c", vega_trap=False, pcr=1.1, iv_skew=0.0))
+        buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="L", gex_state="t", nde_state="c", vega_trap=False, pcr=1.1, iv_skew=0.0))
+        buf.append(OIFlowResult(score=1, phase=TrendPhase.LONG_BUILDUP, reason="L", gex_state="t", nde_state="c", vega_trap=False, pcr=1.1, iv_skew=0.0))
+        # Counts: Long Buildup=3, Neutral=3, Short Buildup=2
+        # Ties between Neutral and Long Buildup. Since Long Buildup is the most recent (at the end), it should win.
+        cond, oi = consolidate_oi_flow(buf)
+        assert oi.phase == TrendPhase.LONG_BUILDUP
+

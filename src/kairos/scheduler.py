@@ -36,6 +36,7 @@ class SessionState:
         # In-memory rolling buffers
         self.candle_buffer: deque = deque(maxlen=settings.candle_buffer_size)
         self.iv_buffer: deque = deque(maxlen=settings.iv_buffer_size)
+        self.oi_flow_buffer: deque = deque(maxlen=settings.oi_consensus_window)
 
         # OI anchor snapshot (15-minute fixed windows)
         self.oi_anchor_snapshot: dict[tuple[int, str], int] = {}
@@ -72,6 +73,7 @@ class SessionState:
         """Reset all in-memory state when a new session starts."""
         self.candle_buffer.clear()
         self.iv_buffer.clear()
+        self.oi_flow_buffer.clear()
         self.oi_anchor_snapshot = {}
         self.anchor_block = -1
         self.last_alerted_oi_phase = None
@@ -441,6 +443,7 @@ async def run_cycle() -> None:
             dte=dte,
             session_config=config,
             previous_status=state.previous_status,
+            oi_flow_buffer=state.oi_flow_buffer,
         )
     except Exception as e:
         logger.error(f"Scoring failed: {e}")
