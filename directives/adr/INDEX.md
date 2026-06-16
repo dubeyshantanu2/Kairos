@@ -23,5 +23,6 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-018 | Greeks-Aware OI Flow Scoring Engine | 2026-04-22 | Active |
 | ADR-019 | Fly.io Docker Deployment | 2026-04-27 | Active |
 | ADR-020 | Fly.io Scale-to-Zero and Automatic Shutdown | 2026-04-27 | Active |
+| ADR-021 | OI Flow Rolling Consensus Filter | 2026-06-14 | Active |
 
 

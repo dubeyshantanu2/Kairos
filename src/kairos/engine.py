@@ -23,6 +23,7 @@ from kairos.models import (
     StrikeCluster,
 )
 from kairos.processor import (
+    consolidate_oi_flow,
     score_gamma_theta,
     score_iv_change,
     score_momentum,
@@ -362,6 +363,7 @@ def evaluate(
     dte: int,
     session_config: SessionConfig,
     previous_status: Optional[str] = None,
+    oi_flow_buffer: Optional[deque] = None,
 ) -> EnvironmentScore:
     """
     Orchestrates the 7 technical scoring conditions into a unified EnvironmentScore.
@@ -389,9 +391,14 @@ def evaluate(
     :type session_config: SessionConfig
     :param previous_status: The text status from the T-1 scoring cycle to measure state changes.
     :type previous_status: Optional[str]
+    :param oi_flow_buffer: Rolling consensus buffer of OIFlowResult objects.
+    :type oi_flow_buffer: Optional[collections.deque]
     :return: The aggregated and capped EnvironmentScore ready for database serialization.
     :rtype: EnvironmentScore
     """
+    if oi_flow_buffer is None:
+        oi_flow_buffer = deque(maxlen=settings.oi_consensus_window)
+
     strike_interval = (
         settings.nifty_strike_interval
         if session_config.symbol == "NIFTY"
@@ -426,7 +433,12 @@ def evaluate(
     # ── Run all 7 conditions ─────────────────────────────────────────────
     c1_iv = score_iv_change(iv_buffer, dte)
     c2_mom = score_momentum(candle_buffer)
-    c3_oi, oi_flow_result = score_oi_flow(cluster, iv_change_rate, candle_buffer)
+    
+    # Condition 3 raw + consensus filtering (ADR-021)
+    c3_oi_raw, oi_flow_result_raw = score_oi_flow(cluster, iv_change_rate, candle_buffer)
+    oi_flow_buffer.append(oi_flow_result_raw)
+    c3_oi, oi_flow_result = consolidate_oi_flow(oi_flow_buffer)
+
     c4_gt = score_gamma_theta(atm, dte)
     c5_pdhl = score_pdhl_breakout(spot_price, prev_levels)
     c6_move = score_move_ratio(atm, candle_buffer, dte)
