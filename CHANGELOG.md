@@ -5,6 +5,9 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Alert Silencing for Low Scores (`scheduler.py`)**:
+  - Implemented noise reduction logic: Discord `#environment` alerts are suppressed when the score is below 6.
+  - When the score drops below 6, the system alerts once, then remains silent until the score reaches 6 or above again.
 - **Fly.io Deployment Setup**:
   - Added `Dockerfile` allowing for reliable explicit builds on Fly.io using the Hatchling `pyproject.toml` configuration.
   - Added `.dockerignore` to secure image creation and prevent `.env` secrets leakage.

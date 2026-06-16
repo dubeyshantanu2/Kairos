@@ -56,6 +56,7 @@ class SessionState:
         self.consecutive_failures: int = 0
         self.api_warning_sent: bool = False
         self.stale_alert_sent: bool = False
+        self.is_silenced: bool = False
 
         # Session boundary tracking
         self.in_session: bool = False
@@ -85,6 +86,7 @@ class SessionState:
         self.api_warning_sent = False
         self.stale_alert_sent = False
         self.iv_cap_active = False
+        self.is_silenced = False
         logger.info("SessionState: buffers reset for new session")
 
 
@@ -500,17 +502,30 @@ async def run_cycle() -> None:
         significant_change = True  # First cycle with scoring data
 
     if (score.state_changed or just_warmed_up or significant_change) and state.warmup_complete:
-        if score.state_changed:
-            logger.info(
-                f"State change: {state.previous_status} → {score.status} "
-                f"(score {score.score}/8)"
-            )
-        
-        if current_oi_phase:
-            state.last_alerted_oi_phase = current_oi_phase
+        should_alert = False
 
-        # Post environment alert for significant shifts
-        await notifier.post_environment_alert(score)
+        if score.score >= 6:
+            state.is_silenced = False
+            should_alert = True
+        else:
+            if not state.is_silenced:
+                state.is_silenced = True
+                should_alert = True
+
+        if should_alert:
+            if score.state_changed:
+                logger.info(
+                    f"State change: {state.previous_status} → {score.status} "
+                    f"(score {score.score}/8)"
+                )
+            
+            if current_oi_phase:
+                state.last_alerted_oi_phase = current_oi_phase
+
+            # Post environment alert for significant shifts
+            await notifier.post_environment_alert(score)
+        else:
+            logger.debug(f"Alert silenced (score {score.score}/8 < 6)")
 
     state.previous_status = score.status
     state.previous_conditions = score.conditions

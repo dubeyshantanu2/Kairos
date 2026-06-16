@@ -180,7 +180,7 @@ async def test_run_cycle_significant_change_detection(mock_deps, mocker):
     
     # 1. Condition list length change
     sched.state.previous_conditions = [MagicMock()]
-    new_score = MagicMock(status="AVOID", state_changed=False, conditions=[MagicMock(), MagicMock()])
+    new_score = MagicMock(status="AVOID", state_changed=False, conditions=[MagicMock(), MagicMock()], score=6)
     sched.evaluate.return_value = new_score
     
     await run_cycle()

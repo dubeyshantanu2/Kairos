@@ -94,6 +94,7 @@ While the Orchestrator manages the conversational slash commands, **the Python e
 
 1. **`#environment`**: (Powered by `discord_webhook_url`)
    - The Python engine posts state changes here (e.g., transitioning from AVOID to GO). 
+   - **Noise Reduction**: Alerts are silenced when the score is below 6. If the score drops below 6, it alerts once and stays silent until a score >= 6 is achieved.
    - These alerts are clean, structured grids showing condition scores mapped via emojis (🟢, 🟡, 🔴).
 2. **`#system-check`**: (Powered by `discord_health_webhook_url`)
    - The Python engine will post a `💓 HEARTBEAT` every 5 minutes during active sessions.
