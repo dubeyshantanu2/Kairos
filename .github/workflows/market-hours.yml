@@ -9,13 +9,15 @@ jobs:
   manage-fly:
     name: Manage Fly.io Scale
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Scale Fly.io Machine
         run: |
           # Get current UTC hour and minute
-          HOUR=$(date +%H)
+          HOUR=$(date +%-H)
           MINUTE=$(date +%M)
           
           echo "Current UTC time: $HOUR:$MINUTE"
@@ -23,7 +25,7 @@ jobs:
           # 03:45 UTC is 9:15 AM IST
           # 09:55 UTC is 3:25 PM IST
           
-          if [ "$HOUR" -lt 06 ]; then
+          if [ "$HOUR" -lt 6 ]; then
             echo "Time is before 06:00 UTC. Scaling UP to 1 machine."
             flyctl scale count 1 --yes
           else
