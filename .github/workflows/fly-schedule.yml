@@ -23,12 +23,24 @@ jobs:
       
       - name: Start App (9:00 AM IST)
         if: github.event.schedule == '30 3 * * 1-5' || github.event.inputs.action == 'start'
-        run: flyctl scale count 1 -a kairos-yxfydw --yes
+        run: |
+          MACHINE_IDS=$(flyctl machine list -a kairos-yxfydw -q)
+          if [ -n "$MACHINE_IDS" ]; then
+            for id in $MACHINE_IDS; do flyctl machine start $id -a kairos-yxfydw; done
+          else
+            echo "No machines found to start. Please deploy first."
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           
       - name: Stop App (3:30 PM IST)
         if: github.event.schedule == '0 10 * * 1-5' || github.event.inputs.action == 'stop'
-        run: flyctl scale count 0 -a kairos-yxfydw --yes
+        run: |
+          MACHINE_IDS=$(flyctl machine list -a kairos-yxfydw -q)
+          if [ -n "$MACHINE_IDS" ]; then
+            for id in $MACHINE_IDS; do flyctl machine stop $id -a kairos-yxfydw; done
+          else
+            echo "No machines found to stop."
+          fi
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
