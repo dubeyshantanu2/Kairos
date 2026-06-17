@@ -131,10 +131,16 @@ The engine can be easily deployed to [Fly.io](https://fly.io) using the included
    ```
 
 **Note on Cost Optimization (Scale-to-Zero):**
-To ensure the bot only runs during market hours (to save Fly.io compute credits), the repository includes a GitHub Action (`.github/workflows/market-hours.yml`). This uses a cron job to automatically scale the Fly.io machine to 1 before market open and down to 0 after market close. 
+To ensure the bot only runs during market hours (to save Fly.io compute credits), the repository includes a GitHub Action (`.github/workflows/fly-schedule.yml`). This uses a cron job to automatically scale the Fly.io machine to 1 before market open and down to 0 after market close. 
 To enable this automation:
-1. Generate a Fly Deploy Token: `flyctl tokens create deploy -x 999999h`
-2. Add it as a GitHub Repository Secret named `FLY_API_TOKEN` under Settings > Secrets and variables > Actions.
+1. Generate a Fly Deploy Token by running: `flyctl tokens create deploy -x 999999h`
+2. Go to your repository on GitHub.
+3. Click on **Settings** in the top navigation bar.
+4. In the left sidebar, click on **Secrets and variables**, then select **Actions**.
+5. Click on the **New repository secret** button.
+6. In the "Name" field, enter `FLY_API_TOKEN`.
+7. In the "Secret" field, paste the token you generated.
+8. Click **Add secret**.
 
 ### 6. Direct CLI Control (Bypass Discord)
 For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.
