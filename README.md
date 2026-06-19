@@ -127,16 +127,22 @@ The engine can be easily deployed to [Fly.io](https://fly.io) using the included
    ```
 
 **Note on Cost Optimization (Scale-to-Zero):**
-To ensure the bot only runs during market hours (to save Fly.io compute credits), the repository includes a GitHub Action (`.github/workflows/fly-schedule.yml`). This uses a cron job to automatically scale the Fly.io machine to 1 before market open and down to 0 after market close. 
-To enable this automation:
-1. Generate a Fly Deploy Token by running: `flyctl tokens create deploy -x 999999h`
-2. Go to your repository on GitHub.
-3. Click on **Settings** in the top navigation bar.
-4. In the left sidebar, click on **Secrets and variables**, then select **Actions**.
-5. Click on the **New repository secret** button.
-6. In the "Name" field, enter `FLY_API_TOKEN`.
-7. In the "Secret" field, paste the token you generated.
-8. Click **Add secret**.
+To ensure the bot only runs during market hours (to save Fly.io compute credits), the machine is scheduled to start via **cron-job.org** calling the Fly.io Machines API.
+
+1. **Generate a Fly Deploy Token** by running:
+   ```bash
+   flyctl tokens create deploy -x 99999h
+   ```
+2. **Configure Cron-job.org:**
+   - Create a new cron job.
+   - **Title:** `Start Kairos Fly Machine`
+   - **Address (URL):** `https://api.machines.dev/v1/apps/kairos-yxfydw/machines/7847455a5e5d78/start`
+   - **Execution Schedule:** Mon-Fri at **09:14 AM IST** (Asia/Kolkata timezone).
+   - **Request Method (Advanced tab):** `POST`
+   - **HTTP Headers:** Add `Authorization` header with the value `Bearer <YOUR_FLY_TOKEN>`.
+3. **Automatic Stop & Scale-to-Zero:**
+   - The application automatically exits via `sys.exit(0)` at market close (`15:25 IST`).
+   - Since `fly.toml` does not contain an `[http_service]` block, Fly.io detects the process exit and scales the machine down to `stopped` state automatically, requiring no "stop" cron job.
 
 ### 6. Direct CLI Control (Bypass Discord)
 For development or manual testing, you can control the monitoring session directly from the terminal without using the Discord Bot.
