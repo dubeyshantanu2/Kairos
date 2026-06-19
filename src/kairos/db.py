@@ -291,3 +291,49 @@ class SupabaseDB:
 
 # Module-level singleton
 db = SupabaseDB()
+
+
+async def load_dhan_credentials_from_supabase() -> None:
+    """
+    Connect to Supabase using existing SUPABASE_URL and SUPABASE_KEY credentials,
+    query the api_keys table where provider = 'DHAN' to select client_id and access_token.
+    Retrieve the values and dynamically overwrite system settings instance attributes.
+    """
+    logger.info("Connecting to Supabase to fetch Dhan credentials...")
+    
+    # We can use the existing db client if started, otherwise create a temporary one.
+    client = db._client
+    temp_client = False
+    if client is None:
+        client = await acreate_client(settings.supabase_url, settings.supabase_key)
+        temp_client = True
+
+    try:
+        result = (
+            await client.table("api_keys")
+            .select("client_id, access_token")
+            .eq("provider", "DHAN")
+            .limit(1)
+            .execute()
+        )
+        if not result.data:
+            raise ValueError("No API credentials found in Supabase for provider 'DHAN'")
+        
+        data = result.data[0]
+        client_id = data.get("client_id")
+        access_token = data.get("access_token")
+        
+        if not client_id or not access_token:
+            raise ValueError(
+                f"Dhan credentials fetched from Supabase are invalid/missing: "
+                f"client_id={'Found' if client_id else 'Missing'}, "
+                f"access_token={'Found' if access_token else 'Missing'}"
+            )
+
+        settings.dhan_client_id = client_id
+        settings.dhan_access_token = access_token
+        logger.info("Successfully retrieved and updated Dhan credentials from Supabase")
+    except Exception as e:
+        logger.error(f"Failed to load Dhan credentials from Supabase: {e}")
+        raise
+

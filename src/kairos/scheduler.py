@@ -16,7 +16,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from loguru import logger
 
 from kairos.config import settings
-from kairos.db import db
+from kairos.db import db, load_dhan_credentials_from_supabase
 from kairos.engine import evaluate
 from kairos.fetcher import DhanAPIError, DhanAuthError, fetcher
 from kairos.models import PreviousDayLevels, SessionConfig
@@ -334,10 +334,41 @@ async def run_cycle() -> None:
 
     # 3. Fetch all data concurrently
     try:
-        option_chain, latest_candle = await asyncio.gather(
-            fetcher.get_option_chain(config.symbol, config.expiry),
-            fetcher.get_latest_candle(config.symbol),
-        )
+        max_auth_retries = 1
+        auth_retry_count = 0
+        while True:
+            try:
+                option_chain, latest_candle = await asyncio.gather(
+                    fetcher.get_option_chain(config.symbol, config.expiry),
+                    fetcher.get_latest_candle(config.symbol),
+                )
+                break
+            except (DhanAuthError, Exception) as e:
+                is_auth_error = isinstance(e, DhanAuthError) or "401" in str(e) or "auth" in str(e).lower()
+                if is_auth_error and auth_retry_count < max_auth_retries:
+                    auth_retry_count += 1
+                    logger.warning(f"ARES detected authentication error: {e}. Reloading credentials from Supabase and retrying...")
+                    try:
+                        await load_dhan_credentials_from_supabase()
+                        # Safe mock-aware await of fetcher.stop() and fetcher.start()
+                        import inspect
+                        stop_fn = fetcher.stop
+                        if inspect.iscoroutinefunction(stop_fn) or isinstance(stop_fn, AsyncMock):
+                            await stop_fn()
+                        else:
+                            stop_fn()
+                        start_fn = fetcher.start
+                        if inspect.iscoroutinefunction(start_fn) or isinstance(start_fn, AsyncMock):
+                            await start_fn()
+                        else:
+                            start_fn()
+                        logger.info("Credentials reloaded and DhanFetcher reinitialized. Retrying API calls...")
+                        continue
+                    except Exception as reload_err:
+                        logger.error(f"Failed to reload credentials during recovery: {reload_err}")
+                        raise e
+                else:
+                    raise e
 
         # Calculate 15-minute anchored OI delta (Mimics broker buildup)
         now_minute = datetime.now(IST).minute
@@ -372,7 +403,7 @@ async def run_cycle() -> None:
             error_type="Dhan API Auth Failed (401)",
             error_detail=str(e),
             last_signal_time=state.last_successful_cycle_time,
-            action_hint="Update DHAN_ACCESS_TOKEN in .env and restart: sudo systemctl restart kairos",
+            action_hint="Verify Supabase api_keys table has active tokens",
         )
         return
 
@@ -608,8 +639,9 @@ async def main() -> None:
     logger.info("Kairos starting up...")
 
     # Start services
-    await fetcher.start()
     await db.start()
+    await load_dhan_credentials_from_supabase()
+    await fetcher.start()
     await notifier.start()
 
     # Graceful shutdown handler

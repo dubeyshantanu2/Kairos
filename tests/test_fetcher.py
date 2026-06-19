@@ -6,7 +6,9 @@ from kairos.fetcher import DhanFetcher, DhanAuthError, DhanAPIError
 from kairos.config import settings
 
 @pytest.mark.asyncio
-async def test_fetcher_start_stop():
+async def test_fetcher_start_stop(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_client_id", "fake_client_id")
+    monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     fetcher = DhanFetcher()
     await fetcher.start()
     assert fetcher._client is not None
@@ -22,11 +24,11 @@ async def test_fetcher_uninitialized():
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetcher_auth_error(monkeypatch):
-    monkeypatch.setattr(settings, "dhan_totp_secret", None)
     respx.post(f"{settings.dhan_base_url}/optionchain").respond(status_code=401)
     fetcher = DhanFetcher()
     
-    # We set access token so start() doesn't fail
+    # We set client id and access token so start() doesn't fail
+    monkeypatch.setattr(settings, "dhan_client_id", "fake_client_id")
     monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     await fetcher.start()
     
@@ -38,6 +40,7 @@ async def test_fetcher_auth_error(monkeypatch):
 @pytest.mark.asyncio
 @respx.mock
 async def test_fetcher_success(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_client_id", "fake_client_id")
     monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     mock_payload = {
         "data": {
@@ -103,6 +106,8 @@ async def test_fetcher_retry_exhaustion(monkeypatch):
     # patch settings to prevent slow tests
     monkeypatch.setattr(settings, "api_max_retries", 2)
     monkeypatch.setattr(settings, "api_retry_delay_seconds", 0.0)
+    monkeypatch.setattr(settings, "dhan_client_id", "fake_client_id")
+    monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     
     respx.post(f"{settings.dhan_base_url}/optionchain").respond(status_code=500)
     
@@ -116,7 +121,9 @@ async def test_fetcher_retry_exhaustion(monkeypatch):
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_fetcher_extra_endpoints():
+async def test_fetcher_extra_endpoints(monkeypatch):
+    monkeypatch.setattr(settings, "dhan_client_id", "fake_client_id")
+    monkeypatch.setattr(settings, "dhan_access_token", "fake_token")
     respx.post(f"{settings.dhan_base_url}/optionchain/expirylist").respond(status_code=200, json={"data": ["2026-03-26", "2026-04-02"]})
     respx.post(f"{settings.dhan_base_url}/charts/intraday").respond(
         status_code=200, 
@@ -141,50 +148,4 @@ async def test_fetcher_extra_endpoints():
     expiries = await fetcher.get_available_expiries("NIFTY")
     assert len(expiries) == 2
     
-    await fetcher.stop()
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_fetcher_totp_reauth(monkeypatch):
-    monkeypatch.setattr(settings, "dhan_access_token", "expired_token")
-    monkeypatch.setattr(settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
-    monkeypatch.setattr(settings, "dhan_client_pin", "123456")
-
-    route = respx.post(f"{settings.dhan_base_url}/optionchain")
-    route.side_effect = [
-        httpx.Response(401),
-        httpx.Response(200, json={"data": {"oc": {}}})
-    ]
-    
-    auth_mock = respx.post(f"{settings.dhan_auth_url}/generateAccessToken").respond(
-        status_code=200, 
-        json={"accessToken": "new_totp_token"}
-    )
-    
-    fetcher = DhanFetcher()
-    await fetcher.start()
-    
-    chain = await fetcher.get_option_chain("NIFTY", date(2026, 3, 26))
-    
-    assert auth_mock.called
-    assert fetcher._client.headers["access-token"] == "new_totp_token"
-    await fetcher.stop()
-
-@pytest.mark.asyncio
-@respx.mock
-async def test_fetcher_totp_start(monkeypatch):
-    monkeypatch.setattr(settings, "dhan_access_token", None)
-    monkeypatch.setattr(settings, "dhan_totp_secret", "JBSWY3DPEHPK3PXP")
-    monkeypatch.setattr(settings, "dhan_client_pin", "123456")
-
-    auth_mock = respx.post(f"{settings.dhan_auth_url}/generateAccessToken").respond(
-        status_code=200, 
-        json={"accessToken": "brand_new_token"}
-    )
-    
-    fetcher = DhanFetcher()
-    await fetcher.start()
-    
-    assert auth_mock.called
-    assert fetcher._client.headers["access-token"] == "brand_new_token"
     await fetcher.stop()

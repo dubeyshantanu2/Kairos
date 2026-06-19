@@ -25,6 +25,7 @@ def mock_deps(mocker):
     mocker.patch("kairos.scheduler.fetcher", new_callable=AsyncMock)
     mocker.patch("kairos.scheduler.notifier", new_callable=AsyncMock)
     mocker.patch("kairos.scheduler.evaluate")
+    mocker.patch("kairos.scheduler.load_dhan_credentials_from_supabase", new_callable=AsyncMock)
 
 def test_session_gate_logic(mocker):
     # Mocking datetime.now is tricky, let's patch the function that returns now()
@@ -228,3 +229,56 @@ async def test_heartbeat_none_config(mock_deps):
     sched.db.get_active_session.return_value = None
     await run_heartbeat()
     # returns early
+
+
+@pytest.mark.asyncio
+async def test_run_cycle_dynamic_auth_recovery(mock_deps, mocker):
+    import kairos.scheduler as sched
+    from kairos.fetcher import DhanAuthError
+    
+    # Enable active session and mock startup states
+    sched.state.reset_buffers()
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.active_config = SessionConfig(symbol="NIFTY", expiry=date.today(), expiry_type="WEEKLY", status="ACTIVE")
+    sched.state.prev_levels = MagicMock()
+    
+    # Patch is_active_session
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    
+    # Mock the database/notifier calls
+    sched.db.get_active_session.return_value = sched.state.active_config
+    sched.db.write_environment_log = AsyncMock()
+    sched.notifier.post_critical_alert = AsyncMock()
+    
+    # Mock the loader function to make sure we assert it gets called
+    mock_loader = mocker.patch("kairos.scheduler.load_dhan_credentials_from_supabase", new_callable=AsyncMock)
+    
+    # First time get_option_chain is called, raise DhanAuthError. Second time, return a mock list.
+    option_chain_mock = []
+    sched.fetcher.get_option_chain = AsyncMock(side_effect=[DhanAuthError("expired"), option_chain_mock])
+    
+    # get_latest_candle returns a dummy candle
+    dummy_candle_mock = MagicMock(close=22000)
+    sched.fetcher.get_latest_candle = AsyncMock(return_value=dummy_candle_mock)
+    
+    # evaluate returns a mock score
+    score = EnvironmentScore(
+        timestamp=datetime.now(), symbol="NIFTY", expiry=date.today(), dte=1, score=7, status="GO", iv_capped=False,
+        conditions=[], summary_raw="raw"
+    )
+    sched.evaluate.return_value = score
+    
+    # Run the cycle
+    await run_cycle()
+    
+    # Assertions
+    # 1. load_dhan_credentials_from_supabase was called
+    mock_loader.assert_called_once()
+    # 2. get_option_chain was called twice (once for initial fail, once for successful retry)
+    assert sched.fetcher.get_option_chain.call_count == 2
+    # 3. get_latest_candle was called twice (since both calls are in gather)
+    assert sched.fetcher.get_latest_candle.call_count == 2
+    # 4. Critical alert was NOT called (recovery was successful!)
+    sched.notifier.post_critical_alert.assert_not_called()
+

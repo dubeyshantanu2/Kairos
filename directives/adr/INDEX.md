@@ -6,7 +6,7 @@ This directory acts as the historical log of all critical architectural decision
 |---------|-------|------|--------|
 | ADR-001 | Supabase Shared State Bridge | 2026-03-22 | Active |
 | ADR-002 | The IV Contraction Cap | 2026-03-22 | Active |
-| ADR-003 | Dynamic TOTP Authentication | 2026-03-23 | Active |
+| ADR-003 | Dynamic TOTP Authentication | 2026-03-23 | Superseded |
 | ADR-004 | Gamma/Theta Calibration & Scaling | 2026-03-23 | Active |
 | ADR-006 | Issue-Only Health Reporting | 2026-03-24 | Active |
 | ADR-007 | Refined Alert Strategy (Start/End/Issue) | 2026-03-24 | Active |
@@ -24,5 +24,6 @@ This directory acts as the historical log of all critical architectural decision
 | ADR-019 | Fly.io Docker Deployment | 2026-04-27 | Active |
 | ADR-020 | Fly.io Scale-to-Zero and Automatic Shutdown | 2026-04-27 | Active |
 | ADR-021 | OI Flow Rolling Consensus Filter | 2026-06-14 | Active |
+| ADR-022 | Dynamic Supabase Bridge Authentication & Recovery | 2026-06-19 | Active |
 
 

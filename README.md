@@ -84,14 +84,10 @@ pip install -e ".[dev]"
 
 ### 2. Environment Variables
 Copy the `.env.example` to `.env` and fill out your local secrets. 
-**Note:** `.env` is explicitly ignored by `git`. Never commit your Dhan tokens or Supabase keys.
+**Note:** `.env` is explicitly ignored by `git`. Never commit your keys to version control. Dhan API credentials (`client_id` and `access_token`) are retrieved dynamically from the Supabase `api_keys` table rather than local environment variables.
 
 | Variable | Description |
 |---|---|
-| `DHAN_CLIENT_ID` | Your Dhan HQ Client ID. |
-| `DHAN_ACCESS_TOKEN` | (Optional) Dhan HQ Access Token. If provided, TOTP is bypassed. |
-| `DHAN_CLIENT_PIN` | (Required for TOTP) 4-digit Dhan login PIN. |
-| `DHAN_TOTP_SECRET` | (Required for TOTP) The 32-character seed (Key) from Dhan's 2FA setup. |
 | `SUPABASE_URL` | Your Supabase project URL (`https://xyz.supabase.co`). |
 | `SUPABASE_KEY` | Public `anon` API key for Supabase restricted via RLS. |
 | `DISCORD_WEBHOOK_URL` | Webhook URL for the `#environment` channel. |

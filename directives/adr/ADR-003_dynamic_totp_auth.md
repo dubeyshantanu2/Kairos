@@ -2,7 +2,7 @@
 
 * **Task ID:** DHAN-AUTH-001
 * **Date:** 2026-03-23
-* **Status:** Active
+* **Status:** Superseded by Supabase bridge dynamic auth (2026-06-19)
 
 ## Problem Statement
 Dhan API access tokens expire after 24 hours. Relying on static tokens in the `.env` file requires manual developer intervention daily to restart the VPS. This creates a single point of failure and high maintenance overhead for a 24/7 autonomous monitoring engine.
