@@ -80,6 +80,18 @@ create index if not exists idx_env_log_latest
     on environment_log (symbol, timestamp desc);
 
 
+-- ── Table: api_keys ──────────────────────────────────────────
+-- Written by centralized token renewal microservice
+-- Read by Python to fetch dynamic client_id and access_token
+
+create table if not exists api_keys (
+    provider      text primary key,                   -- 'DHAN', etc.
+    client_id     text not null,
+    access_token  text not null,
+    updated_at    timestamptz not null default now()
+);
+
+
 -- ─────────────────────────────────────────────────────────────
 -- pg_cron cleanup jobs
 -- Run after the tables above — keeps free tier storage clean
