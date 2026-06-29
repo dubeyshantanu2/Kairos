@@ -38,9 +38,8 @@ class SessionState:
         self.iv_buffer: deque = deque(maxlen=settings.iv_buffer_size)
         self.oi_flow_buffer: deque = deque(maxlen=settings.oi_consensus_window)
 
-        # OI anchor snapshot (15-minute fixed windows)
-        self.oi_anchor_snapshot: dict[tuple[int, str], int] = {}
-        self.anchor_block: int = -1
+        # OI rolling snapshots (15-minute rolling window)
+        self.oi_snapshot_buffer: deque = deque(maxlen=settings.oi_lookback_cycles)
         self.last_alerted_oi_phase: Optional[str] = None
 
         # Session tracking
@@ -75,8 +74,7 @@ class SessionState:
         self.candle_buffer.clear()
         self.iv_buffer.clear()
         self.oi_flow_buffer.clear()
-        self.oi_anchor_snapshot = {}
-        self.anchor_block = -1
+        self.oi_snapshot_buffer.clear()
         self.last_alerted_oi_phase = None
         self.cycle_count = 0
         self.warmup_complete = False
@@ -370,19 +368,17 @@ async def run_cycle() -> None:
                 else:
                     raise e
 
-        # Calculate 15-minute anchored OI delta (Mimics broker buildup)
-        now_minute = datetime.now(IST).minute
-        current_15m_block = now_minute // 15
-        
-        if state.anchor_block != current_15m_block:
-            # New 15-minute candle starting — set the anchor
-            state.oi_anchor_snapshot = {(r.strike, r.option_type): r.oi for r in option_chain}
-            state.anchor_block = current_15m_block
+        # Calculate 15-minute rolling OI delta
+        current_snapshot = {(r.strike, r.option_type): r.oi for r in option_chain}
+        state.oi_snapshot_buffer.append(current_snapshot)
+
+        # Baseline snapshot is the oldest one in the buffer
+        baseline_snapshot = state.oi_snapshot_buffer[0]
 
         for row in option_chain:
             key = (row.strike, row.option_type)
-            if key in state.oi_anchor_snapshot:
-                row.oi_change = row.oi - state.oi_anchor_snapshot[key]
+            if key in baseline_snapshot:
+                row.oi_change = row.oi - baseline_snapshot[key]
             else:
                 row.oi_change = 0
 
@@ -524,10 +520,9 @@ async def run_cycle() -> None:
                 if old_c.status != new_c.status:
                     significant_change = True
             
-            # Rule 2: For OI Flow, alert if the Phase changes at the 15-minute mark
-            now_minute = datetime.now(IST).minute
+            # Rule 2: For OI Flow, alert if the Phase changes (consensus-smoothed)
             if current_oi_phase and state.last_alerted_oi_phase:
-                if current_oi_phase != state.last_alerted_oi_phase and now_minute % 15 == 0:
+                if current_oi_phase != state.last_alerted_oi_phase:
                     significant_change = True
     elif score.conditions:
         significant_change = True  # First cycle with scoring data

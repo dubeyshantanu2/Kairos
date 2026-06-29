@@ -37,7 +37,7 @@ Based on the current score and specifically the state of the Implied Volatility 
 * **🔴 Red (0 Pts):** Range < 0.15% **OR** Trend <= 2/5 candles (heavy chop).
 
 ### Condition 3: ATM OI Flow (Greeks-Aware Scoring Engine)
-**Weight:** 1 Point | **Time Parameter:** 15-Minute Anchored Baseline + 8-Minute Rolling Consensus Filter (ADR-021)
+**Weight:** 1 Point | **Time Parameter:** 15-Minute Rolling Baseline + 8-Minute Rolling Consensus Filter (ADR-021)
 **Logic:** A full-chain evaluation that cross-verifies price action phases against institutional positioning (GEX, NDE, Vega). To stabilize the 1-minute signal, an 8-minute rolling consensus filter (T-0 to T-7) is applied to the raw outputs. The final status is GREEN (1 Pt) only if at least 5 out of the last 8 cycles are raw GREEN, and the reported phase is the mode (most frequent) of those 8 cycles. If a Vega Trap or GEX Pin occurs in >= 3 of the last 8 cycles, the score is immediately forced to RED (0 Pts) for risk safety.
 
 #### Evaluation Logic (Priority-Ordered)

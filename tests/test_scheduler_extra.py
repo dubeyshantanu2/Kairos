@@ -111,7 +111,7 @@ async def test_run_cycle_oi_delta_new_strike(mock_deps, mocker):
     sched.db.get_active_session.return_value = sched.state.active_config
     
     # Baseline has strike 22000
-    sched.state.oi_anchor_snapshot = {(22000, "CE"): 1000}
+    sched.state.oi_snapshot_buffer.append({(22000, "CE"): 1000})
     
     # New row has strike 22050
     from kairos.models import OptionChainRow
@@ -281,4 +281,57 @@ async def test_run_cycle_dynamic_auth_recovery(mock_deps, mocker):
     assert sched.fetcher.get_latest_candle.call_count == 2
     # 4. Critical alert was NOT called (recovery was successful!)
     sched.notifier.post_critical_alert.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_cycle_oi_rolling_calculation(mock_deps, mocker, make_option_row):
+    import kairos.scheduler as sched
+    from kairos.config import settings
+    
+    # Temporarily override lookback cycle setting in config for this test
+    mocker.patch.object(settings, "oi_lookback_cycles", 3)
+    
+    sched.state.startup_done = True
+    sched.state.in_session = True
+    sched.state.active_config = SessionConfig(symbol="NIFTY", expiry=date.today(), expiry_type="WEEKLY", status="ACTIVE")
+    sched.state.prev_levels = MagicMock()
+    
+    mocker.patch("kairos.scheduler.is_active_session", return_value=True)
+    sched.db.get_active_session.return_value = sched.state.active_config
+    sched.db.write_environment_log = AsyncMock()
+    
+    # 4 cycles of option chains
+    row_t2 = make_option_row(22000, "CE", oi=1000)
+    row_t1 = make_option_row(22000, "CE", oi=1200)
+    row_t0 = make_option_row(22000, "CE", oi=1500)
+    
+    sched.fetcher.get_latest_candle.return_value = MagicMock(close=22000)
+    sched.evaluate.return_value = MagicMock(iv_capped=False, status="AVOID", conditions=[])
+    
+    # Re-create state snapshot buffer with the overridden maxlen
+    from collections import deque
+    sched.state.oi_snapshot_buffer = deque(maxlen=settings.oi_lookback_cycles)
+    
+    # Cycle 1: initial snap
+    sched.fetcher.get_option_chain.return_value = [row_t2]
+    await run_cycle()
+    assert row_t2.oi_change == 0
+    
+    # Cycle 2: second snap
+    sched.fetcher.get_option_chain.return_value = [row_t1]
+    await run_cycle()
+    assert row_t1.oi_change == 200
+    
+    # Cycle 3: third snap
+    sched.fetcher.get_option_chain.return_value = [row_t0]
+    await run_cycle()
+    assert row_t0.oi_change == 500
+    
+    # Cycle 4: fourth snap (shifts window)
+    row_t_next = make_option_row(22000, "CE", oi=1800)
+    sched.fetcher.get_option_chain.return_value = [row_t_next]
+    await run_cycle()
+    # Buffer contains [t1, t0, t_next] because maxlen=3, oldest is t1 (oi=1200)
+    assert row_t_next.oi_change == 600
+
 
