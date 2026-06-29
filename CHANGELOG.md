@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **OI Flow Calculation Window**:
+  - Migrated from a 15-minute anchored block window to a true **15-minute rolling window** to avoid zero-delta resets at block boundaries.
+  - Configured `oi_lookback_cycles = 16` (15-minute lookback) and expanded `candle_buffer_size = 20` to support the larger lookback.
+  - Removed the strict 15-minute interval alert gating for OI Phase changes in `scheduler.py` to allow consensus-smoothed alerts to trigger in real-time.
+
 ### Added
 - **Alert Silencing for Low Scores (`scheduler.py`)**:
   - Implemented noise reduction logic: Discord `#environment` alerts are suppressed when the score is below 6.

@@ -94,3 +94,11 @@ def make_cluster():
         )
     return _make
 
+
+@pytest.fixture(autouse=True)
+def mock_test_settings(monkeypatch):
+    from kairos.config import settings
+    monkeypatch.setattr(settings, "oi_lookback_cycles", 6)
+    monkeypatch.setattr(settings, "candle_buffer_size", 15)
+
+
